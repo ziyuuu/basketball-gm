@@ -1,0 +1,41 @@
+name: Phase Gate
+description: Independent phase promotion decision
+title: '[G-PXX] '
+labels:
+  - gate
+body:
+  - type: dropdown
+    id: decision
+    attributes:
+      label: Decision
+      options:
+        - PENDING
+        - PASS
+        - CONDITIONAL
+        - FAIL
+    validations:
+      required: true
+  - type: textarea
+    id: identity
+    attributes:
+      label: Git and source identity
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Independently executed commands
+    validations:
+      required: true
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Blockers and evidence
+    validations:
+      required: true
+  - type: textarea
+    id: promotion
+    attributes:
+      label: Promotion decision
+    validations:
+      required: true

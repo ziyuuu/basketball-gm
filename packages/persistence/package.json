@@ -1,0 +1,14 @@
+{
+  "name": "@sunny-court/persistence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@sunny-court/application": "workspace:*",
+    "@sunny-court/domain": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

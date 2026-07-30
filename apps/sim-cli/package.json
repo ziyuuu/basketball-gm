@@ -1,0 +1,19 @@
+{
+  "name": "@sunny-court/sim-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@sunny-court/application": "workspace:*",
+    "@sunny-court/domain": "workspace:*",
+    "@sunny-court/persistence": "workspace:*",
+    "@sunny-court/persistence-node": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "8.5.1"
+  }
+}

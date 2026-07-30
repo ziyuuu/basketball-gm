@@ -1,0 +1,17 @@
+{
+  "fixture": "p01-evidence-001",
+  "seed": "p01-evidence-001",
+  "calendarWeeks": 120,
+  "operationWeeks": 96,
+  "examWeeks": 24,
+  "schoolYears": 3,
+  "activePlayers": 0,
+  "archivedPlayers": 22,
+  "matches": 24,
+  "wins": 11,
+  "losses": 13,
+  "budgetBalance": 208560,
+  "stateHash": "fnv64:25bcd8442b94985c",
+  "replayHash": "fnv64:c781f673c968efe1",
+  "contentNotice": "P01 fixture only; not formal characters, recruitment, match balance, or content."
+}

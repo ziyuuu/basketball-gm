@@ -1,0 +1,36 @@
+name: Phase task
+description: One bounded implementation task targeting a phase branch
+title: '[PXX-NNN] '
+labels:
+  - task
+body:
+  - type: input
+    id: phase
+    attributes:
+      label: Target phase
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+    validations:
+      required: true
+  - type: textarea
+    id: non_scope
+    attributes:
+      label: Explicit non-scope
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback
+    validations:
+      required: true

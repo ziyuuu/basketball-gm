@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "@sunny-court/application": ["./packages/application/src/index.ts"],
+      "@sunny-court/content-schema": ["./packages/content-schema/src/index.ts"],
+      "@sunny-court/domain": ["./packages/domain/src/index.ts"],
+      "@sunny-court/persistence": ["./packages/persistence/src/index.ts"],
+      "@sunny-court/persistence-indexeddb": ["./packages/persistence-indexeddb/src/index.ts"],
+      "@sunny-court/persistence-node": ["./packages/persistence-node/src/index.ts"],
+      "@sunny-court/ui-tokens": ["./packages/ui-tokens/src/index.ts"]
+    }
+  },
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "scripts/**/*.mjs", "*.ts"]
+}
