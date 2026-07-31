@@ -27,4 +27,6 @@ The implementation thread also ran the same `r2-clean-gate` seed twice through
 - annual grants at weeks 40, 80, and 120;
 - maximum persisted ledger week 120.
 
-These are candidate reproduction results and still require an independent Gate rerun.
+These are implementation-thread reproduction results. The R2 candidate was subsequently
+reproduced independently and accepted, but this report remains implementation evidence rather
+than a substitute for the external review.

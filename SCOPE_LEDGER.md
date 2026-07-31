@@ -48,7 +48,9 @@
 ## P01 explicitly not frozen
 
 - Final basketball attributes or tuning.
-- Model B/C.
+- P01 gameplay placeholder rules: weekly decisions, training effects, budget pressure, reputation
+  effects, automatic roster selection, and feedback.
+- Model B. Model C is not an MVP requirement.
 - Opening 50-select-22 and annual-20 formal probabilities.
 - Tournament formats and national competition structure.
 - Detailed event system.
@@ -57,15 +59,44 @@
 - Fun or balance claims.
 - Any LLM/Agent behavior.
 
+## Current P01/P02 gameplay baseline scope
+
+P01's engineering guarantees remain frozen. Its placeholder gameplay and P02's match gameplay are
+now designed together as one coherent MVP rules slice:
+
+- weekly player decision loop and action budget;
+- player attributes, positions, roles, skills, fatigue, morale, focus, and pressure at MVP depth;
+- training and recovery choices, growth, costs, and trade-offs;
+- active roster of about 22 players into a 12-player match roster, starters, bench, rotation, and
+  position fit;
+- minimum budget and reputation loops only where they change current decisions;
+- match preparation, tactics, one simplified quarter/possession-chain model, settlement, and
+  explainable post-match feedback;
+- grade progression, graduation, archives, and their feedback to the player;
+- a small set of deterministic scenario checks for strength gaps, fatigue, position mismatch,
+  tactical fit, and rotation depth.
+
+The baseline is a design deliverable first. It must be approved before gameplay implementation,
+public match contracts, or balancing fixtures are frozen.
+
+## Current P01/P02 gameplay baseline exclusions
+
+- parallel A/B/C model research or a production model-C spike;
+- formal recruitment generation, annual candidate probabilities, and sustainable roster renewal;
+- complete tournament formats, detailed events, facilities, staff, tradition, or school operations;
+- production UI, final art/content, full-year or three-year balance claims;
+- LLM dialogue, Agent behavior, or model-provider integration.
+
 ## Deferred decisions
 
-| Decision                                                 | Earliest Gate |
-| -------------------------------------------------------- | ------------- |
-| Final match model and attributes                         | P02           |
-| Annual candidate composition and roster sustainability   | P03           |
-| Production information architecture and UI state library | P04           |
-| Phaser/Canvas presentation value                         | P05           |
-| Full one-year balance                                    | P06           |
-| Complete three-year MVP balance                          | P07           |
-| LLM dialogue                                             | P10           |
-| Agent runtime                                            | P11           |
+| Decision                                                 | Earliest Gate              |
+| -------------------------------------------------------- | -------------------------- |
+| MVP match model and core gameplay attributes             | P01/P02 gameplay baseline  |
+| Annual candidate composition and roster sustainability   | P03                        |
+| Production information architecture and UI state library | P04                        |
+| Phaser/Canvas presentation value                         | P05                        |
+| Full one-year balance                                    | P06                        |
+| Complete three-year MVP balance                          | P07                        |
+| Model-C research, if later evidence justifies it         | Post-MVP research decision |
+| LLM dialogue                                             | P10                        |
+| Agent runtime                                            | P11                        |

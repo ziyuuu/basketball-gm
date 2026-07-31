@@ -1,18 +1,19 @@
-# P01 Gate Candidate Status
+# P01 Gate Outcome
 
 - Frozen failed baseline: `32861501d8df84814b18959d527fac033c659729`
 - Rejected R1 candidate: `6984260a0d466e00eba1368fdbcb58ecde4c1078`
-- Latest independent decision: P00 `CONDITIONAL`, P01 `FAIL`
-- R2 implementation status: `REMEDIATION_CANDIDATE_READY`
-- R2 Gate decision: `NOT_REVIEWED`
-- Next phase allowed: `NO FORMAL PROMOTION YET`
+- Accepted R2 candidate: `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`
+- Merged baseline: `6547fbf51b2a440fd9602eed82c869d70b1181e1`
+- Engine version: `0.1.2-p01-r2`
+- Current project status: `P01 COMPLETE`
+- Next phase allowed: `P02-000 GAMEPLAY BASELINE DESIGN`
 
 R1's deterministic event IDs remain intact. R2 fixes the independently confirmed annual-grant
 time defect by deriving every budget entry from the resolved `Week`, then enforcing calendar
 bounds, resolved-week bounds, school-year mapping, monotonic ledger order, and exact year-end
 grant weeks in the state Schema.
 
-Implementation-thread evidence meets the P01 R2 candidate thresholds:
+The implementation evidence and independent R2 reproduction met the P01 thresholds:
 
 - 1,000/1,000 three-year runs completed;
 - exactly 120 calendar and 96 operation weeks per run;
@@ -27,6 +28,7 @@ Implementation-thread evidence meets the P01 R2 candidate thresholds:
 - latest plus previous-good backup exists;
 - domain has no DOM/React/platform dependency.
 
-An independent reviewer must approve P00, check out the R2 candidate directly, rerun all evidence,
-validate manifests, and issue the P01 Gate decision. This report does not self-promote P01, create
-approval history, or allow P02.
+The independent decision was made outside GitHub Review metadata; this file does not fabricate a
+missing review record. The owner accepted the result under the simplified personal-project
+workflow and merged PR #1. That decision permits P02 design but does not freeze P01's prototype
+gameplay values as final design.
