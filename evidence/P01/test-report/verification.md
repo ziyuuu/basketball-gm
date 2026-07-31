@@ -2,8 +2,8 @@
 
 - Date: 2026-07-31
 - Test runner: Vitest 4.1.10
-- Result: 8 files passed, 20 tests passed
-- Duration: 13.39 seconds in the recorded full run
+- Result: 8 files passed, 23 tests passed
+- Duration: 11.46 seconds in the recorded clean-copy full run
 
 ## Covered behavior
 
@@ -11,10 +11,12 @@
 - deterministic RNG replay, snapshots, and cosmetic/match isolation;
 - model A structured-result and score-stat invariants;
 - command commit, revision conflict, budget rejection, and zero-contamination checks;
+- duplicate event ID and committed-revision mismatch rejection in the accepted command audit tail;
 - training-plan command without RNG consumption;
-- save round-trip and accepted-command-tail restoration;
+- save round-trip, accepted-command-tail restoration, and year-end event-ID distinguishability;
 - memory, Node file, and IndexedDB latest/backup behavior;
 - three-year calendar and lifecycle closure;
+- global event ID uniqueness plus revision/week/sequence/type alignment across a full run;
 - grade advancement and graduation/archive transition;
 - year-two save recovery to the uninterrupted terminal hash;
 - 1,000-run completion and replay sample.

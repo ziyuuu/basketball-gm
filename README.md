@@ -9,6 +9,12 @@ The current implementation covers:
 
 The T00 visual prototype is intentionally separate. This repository does not reuse its temporary page architecture or fake gameplay.
 
+## Gate status
+
+The combined baseline at `32861501...` received P00 `CONDITIONAL` and P01 `FAIL`. The current R1
+remediation branch fixes the confirmed event-audit ID defect and refreshes reproducibility
+evidence. It is still a candidate awaiting independent P00/P01 review; P02 is not authorized.
+
 ## Requirements
 
 - Node.js `24.14.x`

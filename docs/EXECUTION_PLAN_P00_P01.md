@@ -4,6 +4,9 @@
 > Authority: development plan v0.6 plus `VISUAL-BASELINE-V2`
 > Objective: establish the formal engineering baseline, then prove a no-UI/no-API three-school-year rules skeleton.
 
+The combined baseline `32861501...` was independently rated P00 `CONDITIONAL` and P01 `FAIL`.
+R1 is a remediation candidate only. It does not rewrite that Gate history or authorize P02.
+
 ## Execution strategy
 
 P00 and P01 remain separate Gates even when implemented in one continuous Work session:
@@ -61,6 +64,9 @@ P00 does **not** require production UI, gameplay balance, formal characters, or 
 | Operation weeks per run                |                              96 |
 | Same-seed replay hash mismatch         |                               0 |
 | Failed-command state/RNG contamination |                               0 |
+| Duplicate domain event IDs             |                               0 |
+| Event ID revision/week/type mismatch   |                               0 |
+| Ambiguous IDs after save/restore       |                               0 |
 | Save round-trip mismatch               |                               0 |
 | Recoverable previous-good backup       | at least 1 per overwritten slot |
 | DOM/React dependency in domain         |                               0 |

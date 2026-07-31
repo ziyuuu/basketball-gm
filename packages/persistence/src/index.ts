@@ -1,5 +1,5 @@
 import {
-  CommandAuditRecordSchema,
+  CommandAuditLogSchema,
   GameSession,
   type CommandAuditRecord,
 } from '@sunny-court/application';
@@ -28,7 +28,7 @@ export const SaveEnvelopeSchema = z
     checksum: z.string().min(1),
     snapshot: GameStateSchema,
     rng: RngStateBundleSchema,
-    recentCommandLog: z.array(CommandAuditRecordSchema),
+    recentCommandLog: CommandAuditLogSchema,
   })
   .strict();
 

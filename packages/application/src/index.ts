@@ -1,5 +1,7 @@
 import {
   GameStateSchema,
+  DomainEventIdSchema,
+  DomainEventSchema,
   RngStateBundleSchema,
   TrainingPlanSchema,
   DeterministicRng,
@@ -7,6 +9,7 @@ import {
   RNG_STREAM_NAMES,
   resolveCurrentWeek,
   stableHash,
+  parseDomainEventId,
   type DomainEvent,
   type GameState,
   type RngStateBundle,
@@ -51,10 +54,62 @@ export const CommandAuditRecordSchema = z
     rngCallsBefore: z.object(rngCallCountShape).strict(),
     rngCallsAfter: z.object(rngCallCountShape).strict(),
     stateHash: z.string().min(1),
-    eventIds: z.array(z.string().min(1)),
+    eventIds: z.array(DomainEventIdSchema),
     auditedAt: z.string().datetime(),
   })
-  .strict();
+  .strict()
+  .superRefine((record, context) => {
+    const seen = new Set<string>();
+    record.eventIds.forEach((eventId, index) => {
+      if (seen.has(eventId)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Duplicate event ID ${eventId} in one command audit record.`,
+          path: ['eventIds', index],
+        });
+      }
+      seen.add(eventId);
+
+      const parsed = parseDomainEventId(eventId);
+      if (parsed && parsed.committedRevision !== record.committedRevision) {
+        context.addIssue({
+          code: 'custom',
+          message: `Event ID revision ${parsed.committedRevision} does not match committed revision ${record.committedRevision}.`,
+          path: ['eventIds', index],
+        });
+      }
+    });
+  });
+
+export const CommandAuditLogSchema = z
+  .array(CommandAuditRecordSchema)
+  .max(64)
+  .superRefine((records, context) => {
+    const seenEventIds = new Set<string>();
+    records.forEach((record, recordIndex) => {
+      if (
+        recordIndex > 0 &&
+        record.committedRevision <= records[recordIndex - 1]!.committedRevision
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Command audit revisions must be strictly increasing.',
+          path: [recordIndex, 'committedRevision'],
+        });
+      }
+
+      record.eventIds.forEach((eventId, eventIndex) => {
+        if (seenEventIds.has(eventId)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Duplicate event ID ${eventId} across the command audit tail.`,
+            path: [recordIndex, 'eventIds', eventIndex],
+          });
+        }
+        seenEventIds.add(eventId);
+      });
+    });
+  });
 
 export const COMMAND_FAILURE_CODES = [
   'COMMAND_SCHEMA_INVALID',
@@ -113,8 +168,8 @@ export class GameSession {
       options.rng instanceof DeterministicRng
         ? options.rng.clone()
         : DeterministicRng.fromSnapshot(RngStateBundleSchema.parse(options.rng));
-    this.#recentCommandLog = (options.recentCommandLog ?? []).map((record) =>
-      CommandAuditRecordSchema.parse(structuredClone(record)),
+    this.#recentCommandLog = CommandAuditLogSchema.parse(
+      structuredClone(options.recentCommandLog ?? []),
     );
     this.#auditClock = options.auditClock ?? (() => new Date().toISOString());
   }
@@ -136,9 +191,7 @@ export class GameSession {
   }
 
   recentCommandLog(): CommandAuditRecord[] {
-    return this.#recentCommandLog.map((record) =>
-      CommandAuditRecordSchema.parse(structuredClone(record)),
-    );
+    return CommandAuditLogSchema.parse(structuredClone(this.#recentCommandLog));
   }
 
   execute(rawCommand: unknown): CommandResult {
@@ -170,7 +223,7 @@ export class GameSession {
       switch (command.type) {
         case 'ADVANCE_WEEK': {
           const transition = resolveCurrentWeek(workingState, workingRng);
-          events = transition.events;
+          events = transition.events.map((domainEvent) => DomainEventSchema.parse(domainEvent));
           break;
         }
         case 'SET_TRAINING_PLAN':
@@ -198,7 +251,9 @@ export class GameSession {
 
       this.#state = committedState;
       this.#rng = workingRng;
-      this.#recentCommandLog = [...this.#recentCommandLog, audit].slice(-64);
+      this.#recentCommandLog = CommandAuditLogSchema.parse(
+        [...this.#recentCommandLog, audit].slice(-64),
+      );
 
       return {
         ok: true,

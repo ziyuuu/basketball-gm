@@ -4,6 +4,8 @@ import {
   ENGINE_VERSION,
   RNG_STREAM_NAMES,
   SAVE_SCHEMA_VERSION,
+  TERMS_PER_SCHOOL_YEAR,
+  WEEKS_PER_TERM,
   type RngStreamName,
 } from './constants.js';
 
@@ -414,23 +416,92 @@ export const GameStateSchema = GameStateBaseSchema.superRefine((state, context) 
   }
 });
 
+export const DOMAIN_EVENT_TYPES = [
+  'WEEK_RESOLVED',
+  'TRAINING_APPLIED',
+  'EXAM_WEEK_RESOLVED',
+  'MATCH_SIMULATED',
+  'PLAYER_GRADE_ADVANCED',
+  'PLAYER_GRADUATED',
+  'SCHOOL_YEAR_COMPLETED',
+  'THREE_YEAR_RUN_COMPLETED',
+] as const;
+
+export const DomainEventTypeSchema = z.enum(DOMAIN_EVENT_TYPES);
+export type DomainEventType = z.infer<typeof DomainEventTypeSchema>;
+
+export interface DomainEventIdParts {
+  committedRevision: number;
+  absoluteWeek: number;
+  sequence: number;
+  type: DomainEventType;
+}
+
+const DOMAIN_EVENT_ID_PATTERN = /^event-r([1-9]\d*)-w([1-9]\d*)-s([1-9]\d*)-([A-Z_]+)$/;
+
+export function parseDomainEventId(value: string): DomainEventIdParts | undefined {
+  const match = DOMAIN_EVENT_ID_PATTERN.exec(value);
+  if (!match) return undefined;
+
+  const committedRevision = Number(match[1]);
+  const absoluteWeek = Number(match[2]);
+  const sequence = Number(match[3]);
+  const type = DomainEventTypeSchema.safeParse(match[4]);
+  if (
+    !Number.isSafeInteger(committedRevision) ||
+    !Number.isSafeInteger(absoluteWeek) ||
+    !Number.isSafeInteger(sequence) ||
+    !type.success
+  ) {
+    return undefined;
+  }
+
+  return {
+    committedRevision,
+    absoluteWeek,
+    sequence,
+    type: type.data,
+  };
+}
+
+export const DomainEventIdSchema = z
+  .string()
+  .refine(
+    (value) => parseDomainEventId(value) !== undefined,
+    'Event ID must encode a positive committed revision, absolute week, sequence, and event type.',
+  );
+
 export const DomainEventSchema = z
   .object({
-    id: z.string().min(1),
-    type: z.enum([
-      'WEEK_RESOLVED',
-      'TRAINING_APPLIED',
-      'EXAM_WEEK_RESOLVED',
-      'MATCH_SIMULATED',
-      'PLAYER_GRADE_ADVANCED',
-      'PLAYER_GRADUATED',
-      'SCHOOL_YEAR_COMPLETED',
-      'THREE_YEAR_RUN_COMPLETED',
-    ]),
+    id: DomainEventIdSchema,
+    type: DomainEventTypeSchema,
     at: GameDateSchema,
     payload: z.record(z.string(), z.unknown()),
   })
-  .strict();
+  .strict()
+  .superRefine((event, context) => {
+    const id = parseDomainEventId(event.id);
+    if (!id) return;
+
+    const absoluteWeek =
+      (event.at.schoolYearIndex - 1) * TERMS_PER_SCHOOL_YEAR * WEEKS_PER_TERM +
+      (event.at.term - 1) * WEEKS_PER_TERM +
+      event.at.weekOfTerm;
+    if (id.absoluteWeek !== absoluteWeek) {
+      context.addIssue({
+        code: 'custom',
+        message: `Event ID week ${id.absoluteWeek} does not match event date week ${absoluteWeek}.`,
+        path: ['id'],
+      });
+    }
+    if (id.type !== event.type) {
+      context.addIssue({
+        code: 'custom',
+        message: `Event ID type ${id.type} does not match event type ${event.type}.`,
+        path: ['id'],
+      });
+    }
+  });
 
 export const RngStreamNameSchema = z.enum(RNG_STREAM_NAMES);
 export const RngStreamStateSchema = z

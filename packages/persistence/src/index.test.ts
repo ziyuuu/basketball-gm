@@ -23,6 +23,15 @@ function session(seed: string): GameSession {
   });
 }
 
+function advance(original: GameSession, count: number, prefix: string): void {
+  for (let index = 0; index < count; index += 1) {
+    const result = original.execute(
+      createAdvanceWeekCommand(original, `${prefix}-${String(index + 1).padStart(3, '0')}`),
+    );
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+  }
+}
+
 describe('save envelope and memory repository', () => {
   it('round-trips state, RNG, and the accepted command tail', () => {
     const original = session('round-trip');
@@ -88,5 +97,33 @@ describe('save envelope and memory repository', () => {
     );
     expect((await repository.loadLatest('autosave'))?.saveId).toBe('valid');
     expect(await repository.loadBackup('autosave')).toBeUndefined();
+  });
+
+  it('preserves distinguishable year-end event audit IDs across save and restore', () => {
+    const original = session('audit-id-round-trip');
+    advance(original, 80, 'week');
+    const envelope = createSaveEnvelope({
+      session: original,
+      saveId: 'year-two',
+      createdAt: '2026-07-31T00:00:00.000Z',
+      committedAt: '2026-07-31T00:00:00.000Z',
+    });
+    const restored = restoreSession(envelope, () => '2026-07-31T00:00:00.000Z');
+
+    expect(restored.recentCommandLog()).toEqual(original.recentCommandLog());
+    const restoredEventIds = restored.recentCommandLog().flatMap((record) => record.eventIds);
+    expect(new Set(restoredEventIds).size).toBe(restoredEventIds.length);
+
+    const yearEndAudit = restored
+      .recentCommandLog()
+      .find((record) => record.committedRevision === 80);
+    expect(yearEndAudit).toBeDefined();
+    const playerLifecycleEventIds = yearEndAudit!.eventIds.filter(
+      (eventId) =>
+        eventId.endsWith('-PLAYER_GRADE_ADVANCED') || eventId.endsWith('-PLAYER_GRADUATED'),
+    );
+    expect(playerLifecycleEventIds).toHaveLength(22);
+    expect(new Set(playerLifecycleEventIds).size).toBe(22);
+    expect(playerLifecycleEventIds.every((eventId) => eventId.includes('-w80-'))).toBe(true);
   });
 });

@@ -92,4 +92,43 @@ describe('application command transaction', () => {
     });
     expect(session.rngSnapshot()).toEqual(rngBefore);
   });
+
+  it('rejects audit tails with duplicate IDs or mismatched event revisions', () => {
+    const original = createSession('duplicate-audit-id');
+    const result = original.execute(createAdvanceWeekCommand(original, 'command-1'));
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+    const firstEventId = result.audit.eventIds[0];
+    if (!firstEventId) throw new Error('Expected the committed week to emit events.');
+
+    expect(
+      () =>
+        new GameSession({
+          state: original.state(),
+          rng: original.rngSnapshot(),
+          recentCommandLog: [
+            {
+              ...result.audit,
+              eventIds: [firstEventId, firstEventId],
+            },
+          ],
+          auditClock: () => '2026-07-31T00:00:00.000Z',
+        }),
+    ).toThrow();
+
+    const mismatchedRevisionId = firstEventId.replace('event-r1-', 'event-r2-');
+    expect(
+      () =>
+        new GameSession({
+          state: original.state(),
+          rng: original.rngSnapshot(),
+          recentCommandLog: [
+            {
+              ...result.audit,
+              eventIds: [mismatchedRevisionId],
+            },
+          ],
+          auditClock: () => '2026-07-31T00:00:00.000Z',
+        }),
+    ).toThrow();
+  });
 });

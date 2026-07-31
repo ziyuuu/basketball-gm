@@ -17,18 +17,21 @@ function weekDate(week: Week): GameDate {
   };
 }
 
-function event(
+function appendEvent(
   state: GameState,
   week: Week,
+  events: DomainEvent[],
   type: DomainEvent['type'],
   payload: Record<string, unknown>,
-): DomainEvent {
-  return {
-    id: `event-${state.revision + 1}-${state.metrics.resolvedCalendarWeeks + 1}-${type}`,
+): void {
+  const committedRevision = state.revision + 1;
+  const sequence = events.length + 1;
+  events.push({
+    id: `event-r${committedRevision}-w${week.absoluteWeek}-s${sequence}-${type}`,
     type,
     at: weekDate(week),
     payload,
-  };
+  });
 }
 
 function clamp(value: number): number {
@@ -105,14 +108,12 @@ function applyOperationWeek(
     growPlayer(player, state.trainingPlan.focus, state.trainingPlan.intensity, rng);
   }
 
-  events.push(
-    event(state, week, 'TRAINING_APPLIED', {
-      playerCount: activePlayers.length,
-      intensity: state.trainingPlan.intensity,
-      focus: state.trainingPlan.focus,
-      weeklyCost,
-    }),
-  );
+  appendEvent(state, week, events, 'TRAINING_APPLIED', {
+    playerCount: activePlayers.length,
+    intensity: state.trainingPlan.intensity,
+    focus: state.trainingPlan.focus,
+    weeklyCost,
+  });
 
   const nextOperationWeek = state.metrics.resolvedOperationWeeks + 1;
   if (nextOperationWeek % 4 === 0) {
@@ -125,13 +126,11 @@ function applyOperationWeek(
       const player = state.players.find((candidate) => candidate.id === playerId);
       if (player) player.condition.fatigue = clamp(player.condition.fatigue + 3);
     }
-    events.push(
-      event(state, week, 'MATCH_SIMULATED', {
-        matchId: result.id,
-        homeScore: result.score.home,
-        awayScore: result.score.away,
-      }),
-    );
+    appendEvent(state, week, events, 'MATCH_SIMULATED', {
+      matchId: result.id,
+      homeScore: result.score.home,
+      awayScore: result.score.away,
+    });
   }
 
   state.metrics.resolvedOperationWeeks += 1;
@@ -145,7 +144,7 @@ function applyExamWeek(state: GameState, week: Week, events: DomainEvent[]): voi
     player.condition.focus = clamp(player.condition.focus + 1.5);
   }
   state.metrics.resolvedExamWeeks += 1;
-  events.push(event(state, week, 'EXAM_WEEK_RESOLVED', {}));
+  appendEvent(state, week, events, 'EXAM_WEEK_RESOLVED', {});
 }
 
 function archiveGraduatedPlayer(state: GameState, player: Player, week: Week): void {
@@ -181,7 +180,7 @@ function settleSchoolYear(state: GameState, week: Week, events: DomainEvent[]): 
     if (player.grade === 3) {
       archiveGraduatedPlayer(state, player, week);
       state.team.activePlayerIds = state.team.activePlayerIds.filter((id) => id !== player.id);
-      events.push(event(state, week, 'PLAYER_GRADUATED', { playerId: player.id }));
+      appendEvent(state, week, events, 'PLAYER_GRADUATED', { playerId: player.id });
     } else {
       player.grade = player.grade === 1 ? 2 : 3;
       player.careerLog.push({
@@ -189,25 +188,21 @@ function settleSchoolYear(state: GameState, week: Week, events: DomainEvent[]): 
         type: 'GRADE_ADVANCED',
         detail: `Advanced to grade ${player.grade}.`,
       });
-      events.push(
-        event(state, week, 'PLAYER_GRADE_ADVANCED', {
-          playerId: player.id,
-          grade: player.grade,
-        }),
-      );
+      appendEvent(state, week, events, 'PLAYER_GRADE_ADVANCED', {
+        playerId: player.id,
+        grade: player.grade,
+      });
     }
   }
 
   state.metrics.completedSchoolYears += 1;
   state.team.history.schoolYearsCompleted += 1;
   appendBudgetEntry(state, state.budget.annualGrant, 'ANNUAL_GRANT', week.schoolYearIndex);
-  events.push(
-    event(state, week, 'SCHOOL_YEAR_COMPLETED', {
-      schoolYearIndex: week.schoolYearIndex,
-      activePlayers: state.team.activePlayerIds.length,
-      archivedPlayers: state.careerArchives.length,
-    }),
-  );
+  appendEvent(state, week, events, 'SCHOOL_YEAR_COMPLETED', {
+    schoolYearIndex: week.schoolYearIndex,
+    activePlayers: state.team.activePlayerIds.length,
+    archivedPlayers: state.careerArchives.length,
+  });
 }
 
 function createWeek(schoolYearIndex: number, term: 1 | 2, weekOfTerm: number): Week {
@@ -240,12 +235,10 @@ function advanceTimeline(state: GameState, week: Week, events: DomainEvent[]): v
   if (week.schoolYearIndex === SCHOOL_YEARS_PER_RUN) {
     state.status = 'THREE_YEAR_COMPLETE';
     state.currentWeek = null;
-    events.push(
-      event(state, week, 'THREE_YEAR_RUN_COMPLETED', {
-        calendarWeeks: state.metrics.resolvedCalendarWeeks,
-        operationWeeks: state.metrics.resolvedOperationWeeks,
-      }),
-    );
+    appendEvent(state, week, events, 'THREE_YEAR_RUN_COMPLETED', {
+      calendarWeeks: state.metrics.resolvedCalendarWeeks,
+      operationWeeks: state.metrics.resolvedOperationWeeks,
+    });
     return;
   }
 
@@ -275,12 +268,10 @@ export function resolveCurrentWeek(
   else applyExamWeek(state, week, events);
 
   state.metrics.resolvedCalendarWeeks += 1;
-  events.push(
-    event(state, week, 'WEEK_RESOLVED', {
-      absoluteWeek: week.absoluteWeek,
-      phase: week.phase,
-    }),
-  );
+  appendEvent(state, week, events, 'WEEK_RESOLVED', {
+    absoluteWeek: week.absoluteWeek,
+    phase: week.phase,
+  });
   advanceTimeline(state, week, events);
 
   return {

@@ -8,11 +8,11 @@ Environment:
 
 Recorded results:
 
-| Workload                       |                          Result |
-| ------------------------------ | ------------------------------: |
-| 100 runs + 10 replay samples   |                     1,101.92 ms |
-| 1,000 runs + 20 replay samples |                     8,787.94 ms |
-| Web production build           | 187 ms in full verification run |
-| sim-cli ESM bundle             |  66 ms in full verification run |
+| Workload                       |                        Result |
+| ------------------------------ | ----------------------------: |
+| 100 runs + 10 replay samples   |                   1,101.92 ms |
+| 1,000 runs + 20 replay samples |                   8,621.23 ms |
+| Web production build           | 252 ms in R1 clean-copy check |
+| sim-cli ESM bundle             |  71 ms in R1 clean-copy check |
 
 These values establish the P01 Work-runner baseline only. They are not a future CI service-level objective.
