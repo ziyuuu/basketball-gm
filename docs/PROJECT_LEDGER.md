@@ -4,15 +4,15 @@
 
 ## Current stage
 
-| Item                  | Status                                     |
-| --------------------- | ------------------------------------------ |
-| P00                   | Complete                                   |
-| P01                   | Complete                                   |
-| P02                   | Ready; gameplay design not started         |
-| Current main          | `6547fbf51b2a440fd9602eed82c869d70b1181e1` |
-| Accepted R2 candidate | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` |
-| Engine version        | `0.1.2-p01-r2`                             |
-| Next task             | `P02-000 P01/P02 gameplay design baseline` |
+| Item                         | Status                                     |
+| ---------------------------- | ------------------------------------------ |
+| P00                          | Complete                                   |
+| P01                          | Complete                                   |
+| P02                          | Ready; gameplay design not started         |
+| Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1` |
+| Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` |
+| Engine version               | `0.1.2-p01-r2`                             |
+| Next task                    | `P02-000 P01/P02 gameplay design baseline` |
 
 ## Frozen baseline
 
