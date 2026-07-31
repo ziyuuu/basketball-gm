@@ -4,14 +4,20 @@
 > Authority: development plan v0.6 plus `VISUAL-BASELINE-V2`
 > Objective: establish the formal engineering baseline, then prove a no-UI/no-API three-school-year rules skeleton.
 
-The combined baseline `32861501...` was independently rated P00 `CONDITIONAL` and P01 `FAIL`.
-R1 repaired event-audit IDs, then independent review again rated P00 `CONDITIONAL` and P01
-`FAIL` because annual grants were persisted at weeks 41/81/121. R2 is a remediation candidate
-only. It does not rewrite either Gate history or authorize P02.
+P00/P01 are complete at `main@6547fbf51b2a440fd9602eed82c869d70b1181e1`. The accepted R2
+candidate is `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`, with engine version
+`0.1.2-p01-r2`.
+
+The failed history remains binding. Combined baseline `32861501...` received P00 `CONDITIONAL` and
+P01 `FAIL` for event-ID integrity. R1 `6984260...` fixed the event IDs, but P01 still failed because
+annual grants were persisted at weeks 41/81/121. R2 corrected that defect, passed the independent
+technical review used by this personal project, and was merged through PR #1. No GitHub Review
+record is invented by this update.
 
 ## Execution strategy
 
-P00 and P01 remain separate Gates even when implemented in one continuous Work session:
+P00 and P01 remained separate technical Gates even when implemented in one continuous Work
+session:
 
 1. Implement and verify P00 on `phase/p00-baseline`.
 2. Independently review the P00 evidence before promoting it to `main`.
@@ -19,6 +25,18 @@ P00 and P01 remain separate Gates even when implemented in one continuous Work s
 4. Independently review P01 before promotion.
 
 No P01 result retroactively excuses a P00 failure.
+
+The repository owner subsequently adopted a lighter personal-project governance flow:
+
+1. develop on a scoped task/fix branch;
+2. require CI and relevant checks to pass;
+3. use an independent audit for key phase or high-risk changes;
+4. obtain owner confirmation;
+5. merge to `main`.
+
+Branch protection, a second GitHub account, and a formal approval record are no longer hard Gates.
+This governance decision removes those items as current blockers; it does not rewrite the earlier
+P00 `CONDITIONAL` decisions as historical `PASS` records.
 
 ## P00 task packages
 
@@ -30,9 +48,9 @@ No P01 result retroactively excuses a P00 failure.
 | P00-004 Governance    | architecture, scope ledger, contribution, ADR, task/PR/Gate/evidence templates | Markdown baselines and templates                      | required-file validation                                        | auditable workflow            |
 | P00-005 Schema spike  | content manifest and unique-character definition Schema                        | package and tests                                     | valid fixture accepted; missing approval/duplicate IDs rejected | content boundary demonstrated |
 
-### P00 Gate
+### P00 original Gate
 
-P00 passes only when:
+The original P00 plan required:
 
 - `pnpm install --frozen-lockfile` and `pnpm check` pass in a clean environment.
 - There are no package cycles.
@@ -42,6 +60,9 @@ P00 passes only when:
 - Web and sim CLI shells start from the README commands.
 - CI records OS, CPU architecture, Node, and pnpm versions.
 - remote `main` protection is enabled before final Gate promotion.
+
+The technical requirements were reproduced successfully for R2. The final branch-protection item
+was retired as a hard Gate by the later owner governance decision described above.
 
 P00 does **not** require production UI, gameplay balance, formal characters, or any LLM code.
 
@@ -78,6 +99,13 @@ P00 does **not** require production UI, gameplay balance, formal characters, or 
 
 P01 Gate explicitly does not judge fun, final balance, official characters, real tournament formats, or UI.
 
+### P01 outcome
+
+R2 satisfied the P01 technical metrics and was independently reproduced before merge. The
+prototype gameplay values used to prove the state machine remain disposable and are explicitly
+reopened for the current P01/P02 gameplay design baseline. P01's command, determinism, persistence,
+time, audit, and state-integrity guarantees are not reopened.
+
 ## Evidence and review
 
 Implementation produces evidence under `evidence/P00` and `evidence/P01`. The implementation report records commands and outputs but may not self-approve the Gate. Final promotion requires an independent reviewer to:
@@ -87,6 +115,19 @@ Implementation produces evidence under `evidence/P00` and `evidence/P01`. The im
 3. inspect boundaries and scope exclusions;
 4. verify evidence hashes and save/replay fixtures;
 5. issue `PASS`, `CONDITIONAL`, or `FAIL` plus `P01 YES/NO` or next-phase decision.
+
+For the current personal-project flow, that independent decision may exist outside GitHub Review
+metadata. The repository must say so explicitly and must never fabricate a review, approval, or
+second identity. Key phase promotion still requires independent evidence plus owner confirmation.
+
+## Next phase
+
+P02 is authorized to begin with `P02-000`, a design-only P01/P02 gameplay baseline. It covers the
+P01 management placeholders and P02 match gameplay as one MVP rules slice. Parallel A/B/C research
+is removed from the MVP path; model B is implemented only after the baseline is approved, model A
+stays as a regression reference, and model C is deferred.
+
+See `PROJECT_LEDGER.md` and `P01_P02_GAMEPLAY_BASELINE_BRIEF.md`.
 
 ## Rollback
 

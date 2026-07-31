@@ -11,8 +11,12 @@ fix/pXX-NNN-short-description
 ```
 
 - Do not commit directly to `main`.
-- A task branch targets only its current phase branch.
-- A phase branch reaches `main` only after an independent Gate.
+- A task branch targets the current phase or `main`, as stated in its task brief.
+- Use the personal-project flow: scoped branch, checks/CI, independent audit for key phase or
+  high-risk changes, owner confirmation, then merge.
+- Branch protection, a second GitHub account, and a formal GitHub approval record are not hard
+  Gates.
+- Implementation-thread self-tests do not count as independent review.
 - Do not reuse a closed task branch for remediation.
 
 ## Required checks
@@ -25,7 +29,10 @@ This runs formatting, lint, type checking, package-boundary checks, tests, and p
 
 ## Change discipline
 
-- Do not mix final gameplay balancing with P00/P01 infrastructure.
+- Keep the accepted P00/P01 engineering guarantees intact. P01 gameplay placeholders may change
+  only under the approved P01/P02 gameplay baseline.
+- Do not treat P02 as a parallel-model research project. Implement one chosen MVP match model after
+  the design baseline; retain model A only as an engineering regression reference.
 - Do not add a DOM, React, Node, storage-adapter, network, or model dependency to `packages/domain`.
 - Do not put exact private model payloads, secrets, or personal data into evidence. Use ignored `artifacts/local/**`.
 - Every state-changing feature requires a command, a reason code, an invariant test, and save round-trip coverage.

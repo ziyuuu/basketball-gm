@@ -48,3 +48,13 @@ compliant.
 
 This file records implementation evidence only. P00 remains `CONDITIONAL`, P01 R2 requires a new
 independent review, and P02 remains prohibited until both Gates pass.
+
+## Subsequent outcome
+
+On 2026-07-31 the R2 candidate
+`f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` passed the independent technical review used by this
+personal project. The owner accepted the result under the simplified governance flow and merged
+PR #1 as `6547fbf51b2a440fd9602eed82c869d70b1181e1`.
+
+The paragraph above remains the candidate-time boundary and is not rewritten as a historical
+approval. No missing GitHub Review record is implied.

@@ -1,20 +1,18 @@
-# P00 Gate Candidate Status
+# P00 Gate Outcome
 
-- Frozen baseline: `32861501d8df84814b18959d527fac033c659729`
-- Latest independent decision: `CONDITIONAL`
-- R2 implementation status: `READY_FOR_INDEPENDENT_REVIEW`
-- R2 Gate decision: `NOT_REVIEWED`
-- P01 promotion decision: `NO FORMAL PROMOTION YET`
+- Frozen failed/conditional baseline: `32861501d8df84814b18959d527fac033c659729`
+- Rejected R1 candidate: `6984260a0d466e00eba1368fdbcb58ecde4c1078`
+- Accepted R2 candidate: `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`
+- Merged baseline: `6547fbf51b2a440fd9602eed82c869d70b1181e1`
+- Current project status: `P00 COMPLETE`
 
-The R1 independent review reproduced the frozen install, `pnpm check`, Web/CLI smoke, same-seed
-run, and 1,000-run batch. P00 remained `CONDITIONAL` because remote `main` was explicitly found
-unprotected and no formal approval record exists. R2 does not alter that governance state.
+The earlier P00 `CONDITIONAL` decisions remain historical facts. The technical checks were
+reproduced for R2: frozen install, `pnpm check`, Web/CLI smoke, deterministic replay, and the
+1,000-run batch.
 
-Final P00 promotion remains blocked on:
+The repository owner then adopted a personal-project governance flow in which branch protection,
+a second account, and a formal GitHub approval record are not hard Gates. Under that explicitly
+approved workflow, the R2 technical baseline was accepted and merged through PR #1.
 
-1. enabling and independently verifying `main` protection;
-2. an independent reviewer checking out the R2 candidate and rerunning the frozen install,
-   `pnpm check`, and Web/CLI smoke;
-3. issuing a real P00 Gate record only after that independent run.
-
-P01 R2 code is an implementation candidate only; it is not evidence that P00 has been approved.
+This outcome is not a retroactive claim that the earlier conditional reviews passed, and it does
+not create a GitHub Review or standalone audit artifact that is absent from the repository.

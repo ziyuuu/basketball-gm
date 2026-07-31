@@ -9,13 +9,32 @@ The current implementation covers:
 
 The T00 visual prototype is intentionally separate. This repository does not reuse its temporary page architecture or fake gameplay.
 
-## Gate status
+## Current status
 
-The combined baseline at `32861501...` received P00 `CONDITIONAL` and P01 `FAIL`. R1 fixed the
-confirmed event-audit ID defect, but independent review kept P00 `CONDITIONAL` and found a new P01
-blocker: annual grants were persisted at weeks 41/81/121. The current R2 candidate records those
-grants at weeks 40/80/120 and rejects future or misaligned persisted weeks. It still requires
-independent P00/P01 review; P02 is not authorized.
+- P00/P01 are complete on `main@6547fbf51b2a440fd9602eed82c869d70b1181e1`.
+- P01-R2 candidate `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` passed the independent
+  technical review used by this personal project and was merged through PR #1.
+- Engine version: `0.1.2-p01-r2`.
+- P02 is authorized to begin with gameplay design; no P02 gameplay implementation has started.
+
+The history is intentionally not rewritten. Baseline `32861501...` failed P01 because of event-ID
+integrity. R1 `6984260...` repaired those IDs but still failed P01 because annual grants were
+persisted at weeks 41/81/121. R2 corrected the grant weeks to 40/80/120 and added the corresponding
+state/save validation.
+
+The repository now uses a personal-project workflow: feature branch, CI, independent audit for key
+stages, owner confirmation, then merge. Branch protection, a second account, and a formal GitHub
+approval record are not hard Gates. Implementation self-tests still cannot be presented as
+independent review.
+
+## Current phase
+
+The next task is `P02-000`: produce a unified gameplay design baseline for the placeholder
+management rules introduced in P01 and the match gameplay required by P02. Design comes before new
+contracts or model-B implementation.
+
+See [Project ledger](./docs/PROJECT_LEDGER.md) and
+[P01/P02 gameplay baseline brief](./docs/P01_P02_GAMEPLAY_BASELINE_BRIEF.md).
 
 ## Requirements
 
@@ -72,6 +91,8 @@ packages/
   ui-tokens/                   Frozen T00 visual tokens only
 docs/
   EXECUTION_PLAN_P00_P01.md
+  PROJECT_LEDGER.md
+  P01_P02_GAMEPLAY_BASELINE_BRIEF.md
   adr/
 evidence/
   P00/

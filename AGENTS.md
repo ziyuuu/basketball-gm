@@ -14,14 +14,20 @@
 - All state-changing behavior goes through application commands and atomic transactions.
 - The same root seed, RNG stream states, snapshot, engine version, and ordered commands must reproduce the same state hash.
 - The first playable proof is a no-UI, no-API, three-school-year simulation.
-- P01 may use prototype attributes and match model A only. It must not freeze final attributes, formal recruitment probabilities, model B, detailed events, reputation formulas, or production UI.
+- P00/P01 engineering integrity is frozen at `main@6547fbf51b2a440fd9602eed82c869d70b1181e1`.
+- P01 attributes, training values, budget values, reputation values, automatic roster selection, and match model A are gameplay placeholders, not frozen design.
+- The current entry task is `P02-000`: design one coherent P01/P02 gameplay baseline before changing those placeholder rules or implementing model B.
+- P02 targets one simplified quarter/possession-chain match model. Model A remains an engineering regression baseline; model C is not an MVP implementation requirement.
+- Formal recruitment probabilities and roster sustainability remain P03. Detailed events, production UI, and later-phase systems must not be pulled into the P01/P02 gameplay baseline.
 - LLM and Agent implementations are out of scope before P10/P11. Do not add model SDKs or API-key environment variables.
 - The game is single-player, has no in-app purchases, no commercial gacha, no online competition, and deliberately allows manual saves, reloads, and save scumming.
 
 ## Workflow
 
-- `main` only receives phase branches after an independent Gate.
-- Use `phase/p00-baseline`, `phase/p01-domain-save`, and task branches named `task/pXX-NNN-*`.
+- Use the personal-project flow: task/fix branch -> CI and relevant checks -> independent audit for key phase or high-risk changes -> owner confirmation -> merge to `main`.
+- Never commit directly to `main`. Implementation-thread self-tests must not be represented as independent review.
+- Branch protection, a second GitHub account, and a formal GitHub approval record are not hard Gates for this repository.
+- Use task branches named `task/pXX-NNN-*` and remediation branches named `fix/pXX-NNN-*`.
 - Keep exact local/private experiment payloads under ignored `artifacts/local/**`; commit schemas, rubrics, summaries, and Gate evidence only.
 - Every phase must update its scope snapshot, traceability table, test/simulation report, known issues, rollback plan, and SHA-256 manifest.
 - A failing CI check is a blocker, not a deferred cleanup item.
