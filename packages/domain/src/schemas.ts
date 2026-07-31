@@ -1,9 +1,14 @@
 import { z } from 'zod';
 
 import {
+  CALENDAR_WEEKS_PER_RUN,
   ENGINE_VERSION,
+  OPERATION_WEEKS_PER_RUN,
   RNG_STREAM_NAMES,
   SAVE_SCHEMA_VERSION,
+  SCHOOL_YEARS_PER_RUN,
+  TERMS_PER_SCHOOL_YEAR,
+  WEEKS_PER_TERM,
   type RngStreamName,
 } from './constants.js';
 
@@ -165,8 +170,8 @@ export const ReputationSchema = z
 export const BudgetLedgerEntrySchema = z
   .object({
     sequence: NonNegativeIntegerSchema,
-    schoolYearIndex: IntegerSchema.min(1),
-    absoluteWeek: NonNegativeIntegerSchema,
+    schoolYearIndex: IntegerSchema.min(1).max(SCHOOL_YEARS_PER_RUN),
+    absoluteWeek: NonNegativeIntegerSchema.max(CALENDAR_WEEKS_PER_RUN),
     amount: z.number().finite(),
     balanceAfter: z.number().finite().min(0),
     reason: z.enum(['INITIAL_GRANT', 'WEEKLY_OPERATIONS', 'EXAM_MAINTENANCE', 'ANNUAL_GRANT']),
@@ -195,8 +200,8 @@ export const SeasonSchema = z
 export const WeekSchema = z
   .object({
     id: z.string().min(1),
-    absoluteWeek: IntegerSchema.min(1),
-    schoolYearIndex: IntegerSchema.min(1),
+    absoluteWeek: IntegerSchema.min(1).max(CALENDAR_WEEKS_PER_RUN),
+    schoolYearIndex: IntegerSchema.min(1).max(SCHOOL_YEARS_PER_RUN),
     term: z.union([z.literal(1), z.literal(2)]),
     weekOfTerm: IntegerSchema.min(1).max(20),
     phase: z.enum(['TERM_OPERATION', 'EXAM_WRAP']),
@@ -216,7 +221,7 @@ export const MatchPlayerStatSchema = z
 export const MatchResultSchema = z
   .object({
     id: z.string().min(1),
-    absoluteWeek: IntegerSchema.min(1),
+    absoluteWeek: IntegerSchema.min(1).max(CALENDAR_WEEKS_PER_RUN),
     homeTeamId: z.string().min(1),
     opponentId: z.string().min(1),
     seedRef: z
@@ -264,10 +269,12 @@ export const TrainingPlanSchema = z
 
 export const SimulationMetricsSchema = z
   .object({
-    resolvedCalendarWeeks: NonNegativeIntegerSchema,
-    resolvedOperationWeeks: NonNegativeIntegerSchema,
-    resolvedExamWeeks: NonNegativeIntegerSchema,
-    completedSchoolYears: NonNegativeIntegerSchema,
+    resolvedCalendarWeeks: NonNegativeIntegerSchema.max(CALENDAR_WEEKS_PER_RUN),
+    resolvedOperationWeeks: NonNegativeIntegerSchema.max(OPERATION_WEEKS_PER_RUN),
+    resolvedExamWeeks: NonNegativeIntegerSchema.max(
+      CALENDAR_WEEKS_PER_RUN - OPERATION_WEEKS_PER_RUN,
+    ),
+    completedSchoolYears: NonNegativeIntegerSchema.max(SCHOOL_YEARS_PER_RUN),
     matches: NonNegativeIntegerSchema,
   })
   .strict();
@@ -398,6 +405,93 @@ export const GameStateSchema = GameStateBaseSchema.superRefine((state, context) 
       path: ['budget'],
     });
   }
+
+  const weeksPerSchoolYear = TERMS_PER_SCHOOL_YEAR * WEEKS_PER_TERM;
+  let previousLedgerWeek = 0;
+  for (const [index, entry] of state.budget.ledger.entries()) {
+    if (entry.sequence !== index) {
+      context.addIssue({
+        code: 'custom',
+        message: `Budget ledger sequence ${entry.sequence} does not match position ${index}.`,
+        path: ['budget', 'ledger', index, 'sequence'],
+      });
+    }
+
+    if (entry.reason === 'INITIAL_GRANT') {
+      if (index !== 0 || entry.absoluteWeek !== 0 || entry.schoolYearIndex !== 1) {
+        context.addIssue({
+          code: 'custom',
+          message: 'The initial grant must be the first ledger entry at school year 1, week 0.',
+          path: ['budget', 'ledger', index],
+        });
+      }
+    } else {
+      if (entry.absoluteWeek < 1) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A resolved budget entry must use a positive absolute week.',
+          path: ['budget', 'ledger', index, 'absoluteWeek'],
+        });
+      }
+      if (entry.absoluteWeek > state.metrics.resolvedCalendarWeeks) {
+        context.addIssue({
+          code: 'custom',
+          message: `Budget entry week ${entry.absoluteWeek} exceeds resolved week ${state.metrics.resolvedCalendarWeeks}.`,
+          path: ['budget', 'ledger', index, 'absoluteWeek'],
+        });
+      }
+
+      const expectedSchoolYear = Math.ceil(entry.absoluteWeek / weeksPerSchoolYear);
+      if (entry.schoolYearIndex !== expectedSchoolYear) {
+        context.addIssue({
+          code: 'custom',
+          message: `Budget entry week ${entry.absoluteWeek} belongs to school year ${expectedSchoolYear}, not ${entry.schoolYearIndex}.`,
+          path: ['budget', 'ledger', index, 'schoolYearIndex'],
+        });
+      }
+    }
+
+    if (entry.absoluteWeek < previousLedgerWeek) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Budget ledger weeks must be nondecreasing.',
+        path: ['budget', 'ledger', index, 'absoluteWeek'],
+      });
+    }
+    previousLedgerWeek = entry.absoluteWeek;
+
+    if (
+      entry.reason === 'ANNUAL_GRANT' &&
+      entry.absoluteWeek !== entry.schoolYearIndex * weeksPerSchoolYear
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `Annual grant for school year ${entry.schoolYearIndex} must be recorded at week ${entry.schoolYearIndex * weeksPerSchoolYear}.`,
+        path: ['budget', 'ledger', index, 'absoluteWeek'],
+      });
+    }
+  }
+
+  for (const [index, result] of state.matchResults.entries()) {
+    if (result.absoluteWeek > state.metrics.resolvedCalendarWeeks) {
+      context.addIssue({
+        code: 'custom',
+        message: `Match result week ${result.absoluteWeek} exceeds resolved week ${state.metrics.resolvedCalendarWeeks}.`,
+        path: ['matchResults', index, 'absoluteWeek'],
+      });
+    }
+  }
+
+  if (
+    state.status === 'THREE_YEAR_COMPLETE' &&
+    state.metrics.resolvedCalendarWeeks !== CALENDAR_WEEKS_PER_RUN
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: `A completed run must resolve exactly ${CALENDAR_WEEKS_PER_RUN} calendar weeks.`,
+      path: ['metrics', 'resolvedCalendarWeeks'],
+    });
+  }
   if (state.status === 'ACTIVE' && state.currentWeek === null) {
     context.addIssue({
       code: 'custom',
@@ -414,23 +508,92 @@ export const GameStateSchema = GameStateBaseSchema.superRefine((state, context) 
   }
 });
 
+export const DOMAIN_EVENT_TYPES = [
+  'WEEK_RESOLVED',
+  'TRAINING_APPLIED',
+  'EXAM_WEEK_RESOLVED',
+  'MATCH_SIMULATED',
+  'PLAYER_GRADE_ADVANCED',
+  'PLAYER_GRADUATED',
+  'SCHOOL_YEAR_COMPLETED',
+  'THREE_YEAR_RUN_COMPLETED',
+] as const;
+
+export const DomainEventTypeSchema = z.enum(DOMAIN_EVENT_TYPES);
+export type DomainEventType = z.infer<typeof DomainEventTypeSchema>;
+
+export interface DomainEventIdParts {
+  committedRevision: number;
+  absoluteWeek: number;
+  sequence: number;
+  type: DomainEventType;
+}
+
+const DOMAIN_EVENT_ID_PATTERN = /^event-r([1-9]\d*)-w([1-9]\d*)-s([1-9]\d*)-([A-Z_]+)$/;
+
+export function parseDomainEventId(value: string): DomainEventIdParts | undefined {
+  const match = DOMAIN_EVENT_ID_PATTERN.exec(value);
+  if (!match) return undefined;
+
+  const committedRevision = Number(match[1]);
+  const absoluteWeek = Number(match[2]);
+  const sequence = Number(match[3]);
+  const type = DomainEventTypeSchema.safeParse(match[4]);
+  if (
+    !Number.isSafeInteger(committedRevision) ||
+    !Number.isSafeInteger(absoluteWeek) ||
+    !Number.isSafeInteger(sequence) ||
+    !type.success
+  ) {
+    return undefined;
+  }
+
+  return {
+    committedRevision,
+    absoluteWeek,
+    sequence,
+    type: type.data,
+  };
+}
+
+export const DomainEventIdSchema = z
+  .string()
+  .refine(
+    (value) => parseDomainEventId(value) !== undefined,
+    'Event ID must encode a positive committed revision, absolute week, sequence, and event type.',
+  );
+
 export const DomainEventSchema = z
   .object({
-    id: z.string().min(1),
-    type: z.enum([
-      'WEEK_RESOLVED',
-      'TRAINING_APPLIED',
-      'EXAM_WEEK_RESOLVED',
-      'MATCH_SIMULATED',
-      'PLAYER_GRADE_ADVANCED',
-      'PLAYER_GRADUATED',
-      'SCHOOL_YEAR_COMPLETED',
-      'THREE_YEAR_RUN_COMPLETED',
-    ]),
+    id: DomainEventIdSchema,
+    type: DomainEventTypeSchema,
     at: GameDateSchema,
     payload: z.record(z.string(), z.unknown()),
   })
-  .strict();
+  .strict()
+  .superRefine((event, context) => {
+    const id = parseDomainEventId(event.id);
+    if (!id) return;
+
+    const absoluteWeek =
+      (event.at.schoolYearIndex - 1) * TERMS_PER_SCHOOL_YEAR * WEEKS_PER_TERM +
+      (event.at.term - 1) * WEEKS_PER_TERM +
+      event.at.weekOfTerm;
+    if (id.absoluteWeek !== absoluteWeek) {
+      context.addIssue({
+        code: 'custom',
+        message: `Event ID week ${id.absoluteWeek} does not match event date week ${absoluteWeek}.`,
+        path: ['id'],
+      });
+    }
+    if (id.type !== event.type) {
+      context.addIssue({
+        code: 'custom',
+        message: `Event ID type ${id.type} does not match event type ${event.type}.`,
+        path: ['id'],
+      });
+    }
+  });
 
 export const RngStreamNameSchema = z.enum(RNG_STREAM_NAMES);
 export const RngStreamStateSchema = z

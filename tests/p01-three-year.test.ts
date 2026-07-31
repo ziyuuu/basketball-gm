@@ -1,9 +1,13 @@
 import { GameSession, createAdvanceWeekCommand } from '@sunny-court/application';
 import {
   CALENDAR_WEEKS_PER_RUN,
+  DomainEventSchema,
   GameStateSchema,
   OPERATION_WEEKS_PER_RUN,
+  TERMS_PER_SCHOOL_YEAR,
+  WEEKS_PER_TERM,
   createInitialGame,
+  parseDomainEventId,
   stableHash,
 } from '@sunny-court/domain';
 import {
@@ -42,7 +46,18 @@ describe('P01 three-year headless Gate', () => {
       matches: 24,
     });
     expect(result.summary.wins + result.summary.losses).toBe(result.summary.matches);
-    expect(GameStateSchema.safeParse(result.session.state()).success).toBe(true);
+    const state = result.session.state();
+    expect(GameStateSchema.safeParse(state).success).toBe(true);
+    expect(
+      state.budget.ledger
+        .filter((entry) => entry.reason === 'ANNUAL_GRANT')
+        .map((entry) => entry.absoluteWeek),
+    ).toEqual([40, 80, 120]);
+    expect(
+      state.budget.ledger.every(
+        (entry) => entry.absoluteWeek <= state.metrics.resolvedCalendarWeeks,
+      ),
+    ).toBe(true);
   });
 
   it('advances grades and graduates the initial grade-two fixture at year two', async () => {
@@ -104,6 +119,67 @@ describe('P01 three-year headless Gate', () => {
 
     expect(stableHash(restored.state())).toBe(stableHash(uninterrupted.session.state()));
     expect(restored.rngSnapshot()).toEqual(uninterrupted.session.rngSnapshot());
+  });
+
+  it('emits globally unique event IDs aligned with revision, actual week, sequence, and type', () => {
+    const initial = createInitialGame({
+      rootSeed: 'event-audit-integrity',
+      schoolName: '测试高中',
+      managerName: '测试经理',
+    });
+    const session = new GameSession({
+      state: initial.state,
+      rng: initial.rng,
+      auditClock: () => '2026-07-31T00:00:00.000Z',
+    });
+    const eventIds: string[] = [];
+
+    while (session.status === 'ACTIVE') {
+      const committedRevision = session.revision + 1;
+      const result = session.execute(
+        createAdvanceWeekCommand(session, `audit-week-${committedRevision}`),
+      );
+      if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+
+      result.events.forEach((event, eventIndex) => {
+        const absoluteWeek =
+          (event.at.schoolYearIndex - 1) * TERMS_PER_SCHOOL_YEAR * WEEKS_PER_TERM +
+          (event.at.term - 1) * WEEKS_PER_TERM +
+          event.at.weekOfTerm;
+        expect(DomainEventSchema.safeParse(event).success).toBe(true);
+        expect(parseDomainEventId(event.id)).toEqual({
+          committedRevision,
+          absoluteWeek,
+          sequence: eventIndex + 1,
+          type: event.type,
+        });
+        eventIds.push(event.id);
+      });
+    }
+
+    expect(eventIds.length).toBeGreaterThan(0);
+    expect(new Set(eventIds).size).toBe(eventIds.length);
+  });
+
+  it('rejects persisted budget entries dated after the resolved calendar', () => {
+    const initial = createInitialGame({
+      rootSeed: 'future-budget-entry',
+      schoolName: '测试高中',
+      managerName: '测试经理',
+    });
+    const session = new GameSession({
+      state: initial.state,
+      rng: initial.rng,
+      auditClock: () => '2026-07-31T00:00:00.000Z',
+    });
+    advance(session, 1, 'week');
+
+    const corrupted = session.state();
+    const latestEntry = corrupted.budget.ledger.at(-1);
+    if (!latestEntry) throw new Error('Expected a weekly budget entry.');
+    latestEntry.absoluteWeek = 2;
+
+    expect(GameStateSchema.safeParse(corrupted).success).toBe(false);
   });
 
   it('completes the 1,000-run phase Gate without deadlock or illegal terminal states', async () => {

@@ -10,24 +10,30 @@
 ## Commands
 
 ```text
-pnpm install --frozen-lockfile --store-dir /tmp/sunny-court-pnpm-store-clean
+pnpm install --frozen-lockfile --store-dir <new-empty-/tmp-store>
 pnpm check
+pnpm --filter @sunny-court/web dev --host 127.0.0.1 --port 4173
+curl --fail http://127.0.0.1:4173/
 ```
 
 ## Results
 
 | Check                             | Result                           |
 | --------------------------------- | -------------------------------- |
-| Frozen lock install               | PASS; already up to date         |
+| Frozen lock install               | PASS; 180 packages downloaded    |
 | Prettier                          | PASS                             |
 | ESLint                            | PASS                             |
 | TypeScript strict                 | PASS                             |
 | Package graph                     | PASS; 9 apps/packages, no cycles |
 | Domain isolation                  | PASS                             |
 | Model SDK/API-key production scan | PASS                             |
-| Tests                             | PASS; 8 files, 20 tests          |
+| Tests                             | PASS; 8 files, 25 tests          |
 | Web production build              | PASS; 17 modules                 |
 | sim-cli bundle                    | PASS; Node 24 ESM bundle         |
 | Web development smoke             | PASS; HTTP 200 on `127.0.0.1`    |
 
-This is implementation evidence, not an independent Gate approval.
+The R2 clean-copy check included a 12.20-second Vitest run. Web production build completed in
+226 ms and the sim-cli ESM bundle completed in 82 ms.
+
+This clean-copy run was performed by the implementation thread. It is reproducible candidate
+evidence, not an independent Gate approval.
