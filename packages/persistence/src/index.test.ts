@@ -1,10 +1,12 @@
 import { GameSession, createAdvanceWeekCommand } from '@sunny-court/application';
-import { createInitialGame, stableHash } from '@sunny-court/domain';
+import { GameStateSchema, createInitialGame, stableHash } from '@sunny-court/domain';
 import { describe, expect, it } from 'vitest';
 
 import {
   InMemorySaveRepository,
+  SaveEnvelopeSchema,
   SaveIntegrityError,
+  calculateSaveChecksum,
   createSaveEnvelope,
   restoreSession,
   type SaveEnvelope,
@@ -125,5 +127,33 @@ describe('save envelope and memory repository', () => {
     expect(playerLifecycleEventIds).toHaveLength(22);
     expect(new Set(playerLifecycleEventIds).size).toBe(22);
     expect(playerLifecycleEventIds.every((eventId) => eventId.includes('-w80-'))).toBe(true);
+  });
+
+  it('rejects checksummed saves with annual grants at weeks 41, 81, or 121', () => {
+    const original = session('future-ledger-save');
+    advance(original, 120, 'week');
+    const valid = createSaveEnvelope({
+      session: original,
+      saveId: 'terminal',
+      createdAt: '2026-07-31T00:00:00.000Z',
+      committedAt: '2026-07-31T00:00:00.000Z',
+    });
+    const invalidWeeks = [41, 81, 121];
+
+    invalidWeeks.forEach((absoluteWeek, grantIndex) => {
+      const corrupted = structuredClone(valid) as SaveEnvelope;
+      const annualGrants = corrupted.snapshot.budget.ledger.filter(
+        (entry) => entry.reason === 'ANNUAL_GRANT',
+      );
+      const grant = annualGrants[grantIndex];
+      if (!grant) throw new Error(`Expected annual grant ${grantIndex + 1}.`);
+      grant.absoluteWeek = absoluteWeek;
+      corrupted.snapshotHash = stableHash(corrupted.snapshot);
+      corrupted.checksum = calculateSaveChecksum(corrupted);
+
+      expect(GameStateSchema.safeParse(corrupted.snapshot).success).toBe(false);
+      expect(SaveEnvelopeSchema.safeParse(corrupted).success).toBe(false);
+      expect(() => restoreSession(corrupted)).toThrow();
+    });
   });
 });

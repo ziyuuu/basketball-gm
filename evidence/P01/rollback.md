@@ -5,7 +5,10 @@
 - Never roll back command atomicity, versioned saves, independent RNG streams, or state validation.
 - Event ID uniqueness, actual-week alignment, command-local sequencing, and audit-tail validation
   are non-negotiable R1 integrity rules.
-- Before Gate promotion, the R1 branch may be discarded as one unit. Do not roll back to
-  `32861501...` as a promotable candidate because that commit contains the confirmed audit defect.
-- Pre-R1 prototype saves have no migration path; regenerate them under engine
-  `0.1.1-p01-r1`.
+- Explicit resolved-week ledger dates, annual grants at weeks 40/80/120, and rejection of future
+  persisted weeks are non-negotiable R2 integrity rules.
+- Before Gate promotion, the R2 commit may be discarded as one unit. Do not roll back to
+  `32861501...` or R1 candidate `6984260...` as a promotable candidate because both contain
+  independently confirmed defects.
+- Pre-R2 prototype saves have no migration path; regenerate them under engine
+  `0.1.2-p01-r2`.

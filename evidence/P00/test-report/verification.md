@@ -27,12 +27,13 @@ curl --fail http://127.0.0.1:4173/
 | Package graph                     | PASS; 9 apps/packages, no cycles |
 | Domain isolation                  | PASS                             |
 | Model SDK/API-key production scan | PASS                             |
-| Tests                             | PASS; 8 files, 23 tests          |
+| Tests                             | PASS; 8 files, 25 tests          |
 | Web production build              | PASS; 17 modules                 |
 | sim-cli bundle                    | PASS; Node 24 ESM bundle         |
 | Web development smoke             | PASS; HTTP 200 on `127.0.0.1`    |
 
-The final clean-copy `pnpm check` duration was 21.15 seconds, including an 11.46-second Vitest run.
+The R2 clean-copy check included a 12.20-second Vitest run. Web production build completed in
+226 ms and the sim-cli ESM bundle completed in 82 ms.
 
 This clean-copy run was performed by the implementation thread. It is reproducible candidate
 evidence, not an independent Gate approval.

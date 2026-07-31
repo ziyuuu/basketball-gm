@@ -2,8 +2,8 @@
 
 - Date: 2026-07-31
 - Test runner: Vitest 4.1.10
-- Result: 8 files passed, 23 tests passed
-- Duration: 11.46 seconds in the recorded clean-copy full run
+- Result: 8 files passed, 25 tests passed
+- Duration: 12.20 seconds in the recorded clean-copy full run
 
 ## Covered behavior
 
@@ -16,6 +16,9 @@
 - save round-trip, accepted-command-tail restoration, and year-end event-ID distinguishability;
 - memory, Node file, and IndexedDB latest/backup behavior;
 - three-year calendar and lifecycle closure;
+- annual grants at exactly weeks 40/80/120 and no ledger entry after the resolved calendar;
+- rejection of future-dated state entries;
+- rejection before restore of checksummed saves containing annual grants at 41/81/121;
 - global event ID uniqueness plus revision/week/sequence/type alignment across a full run;
 - grade advancement and graduation/archive transition;
 - year-two save recovery to the uninterrupted terminal hash;

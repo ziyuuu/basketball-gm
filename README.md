@@ -11,9 +11,11 @@ The T00 visual prototype is intentionally separate. This repository does not reu
 
 ## Gate status
 
-The combined baseline at `32861501...` received P00 `CONDITIONAL` and P01 `FAIL`. The current R1
-remediation branch fixes the confirmed event-audit ID defect and refreshes reproducibility
-evidence. It is still a candidate awaiting independent P00/P01 review; P02 is not authorized.
+The combined baseline at `32861501...` received P00 `CONDITIONAL` and P01 `FAIL`. R1 fixed the
+confirmed event-audit ID defect, but independent review kept P00 `CONDITIONAL` and found a new P01
+blocker: annual grants were persisted at weeks 41/81/121. The current R2 candidate records those
+grants at weeks 40/80/120 and rejects future or misaligned persisted weeks. It still requires
+independent P00/P01 review; P02 is not authorized.
 
 ## Requirements
 

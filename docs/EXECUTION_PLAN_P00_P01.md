@@ -5,7 +5,9 @@
 > Objective: establish the formal engineering baseline, then prove a no-UI/no-API three-school-year rules skeleton.
 
 The combined baseline `32861501...` was independently rated P00 `CONDITIONAL` and P01 `FAIL`.
-R1 is a remediation candidate only. It does not rewrite that Gate history or authorize P02.
+R1 repaired event-audit IDs, then independent review again rated P00 `CONDITIONAL` and P01
+`FAIL` because annual grants were persisted at weeks 41/81/121. R2 is a remediation candidate
+only. It does not rewrite either Gate history or authorize P02.
 
 ## Execution strategy
 
@@ -67,6 +69,9 @@ P00 does **not** require production UI, gameplay balance, formal characters, or 
 | Duplicate domain event IDs             |                               0 |
 | Event ID revision/week/type mismatch   |                               0 |
 | Ambiguous IDs after save/restore       |                               0 |
+| Annual-grant absolute weeks            |                       40/80/120 |
+| Persisted entries after resolved week  |                               0 |
+| Checksummed 41/81/121 save accepted    |                               0 |
 | Save round-trip mismatch               |                               0 |
 | Recoverable previous-good backup       | at least 1 per overwritten slot |
 | DOM/React dependency in domain         |                               0 |

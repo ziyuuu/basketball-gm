@@ -11,8 +11,8 @@
   "wins": 11,
   "losses": 13,
   "budgetBalance": 208560,
-  "stateHash": "fnv64:8cd39b77a52efa93",
-  "replayHash": "fnv64:1b565cb6148d2198",
-  "engineVersion": "0.1.1-p01-r1",
+  "stateHash": "fnv64:d2e562049e32562a",
+  "replayHash": "fnv64:321321f346df2bd9",
+  "engineVersion": "0.1.2-p01-r2",
   "contentNotice": "P01 fixture only; not formal characters, recruitment, match balance, or content."
 }

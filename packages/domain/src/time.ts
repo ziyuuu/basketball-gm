@@ -42,7 +42,7 @@ function appendBudgetEntry(
   state: GameState,
   amount: number,
   reason: 'WEEKLY_OPERATIONS' | 'EXAM_MAINTENANCE' | 'ANNUAL_GRANT',
-  schoolYearIndex: number,
+  week: Week,
 ): void {
   const nextBalance = state.budget.balance + amount;
   if (nextBalance < state.budget.reserved) {
@@ -54,8 +54,8 @@ function appendBudgetEntry(
   state.budget.balance = nextBalance;
   state.budget.ledger.push({
     sequence: state.budget.ledger.length,
-    schoolYearIndex,
-    absoluteWeek: state.metrics.resolvedCalendarWeeks + 1,
+    schoolYearIndex: week.schoolYearIndex,
+    absoluteWeek: week.absoluteWeek,
     amount,
     balanceAfter: nextBalance,
     reason,
@@ -102,7 +102,7 @@ function applyOperationWeek(
 ): void {
   const activePlayers = state.players.filter((player) => player.activeStatus === 'ACTIVE');
   const weeklyCost = 200 + activePlayers.length * state.trainingPlan.intensity * 10;
-  appendBudgetEntry(state, -weeklyCost, 'WEEKLY_OPERATIONS', week.schoolYearIndex);
+  appendBudgetEntry(state, -weeklyCost, 'WEEKLY_OPERATIONS', week);
 
   for (const player of activePlayers) {
     growPlayer(player, state.trainingPlan.focus, state.trainingPlan.intensity, rng);
@@ -137,7 +137,7 @@ function applyOperationWeek(
 }
 
 function applyExamWeek(state: GameState, week: Week, events: DomainEvent[]): void {
-  appendBudgetEntry(state, -100, 'EXAM_MAINTENANCE', week.schoolYearIndex);
+  appendBudgetEntry(state, -100, 'EXAM_MAINTENANCE', week);
   for (const player of state.players) {
     if (player.activeStatus !== 'ACTIVE') continue;
     player.condition.fatigue = clamp(player.condition.fatigue - 5);
@@ -197,7 +197,7 @@ function settleSchoolYear(state: GameState, week: Week, events: DomainEvent[]): 
 
   state.metrics.completedSchoolYears += 1;
   state.team.history.schoolYearsCompleted += 1;
-  appendBudgetEntry(state, state.budget.annualGrant, 'ANNUAL_GRANT', week.schoolYearIndex);
+  appendBudgetEntry(state, state.budget.annualGrant, 'ANNUAL_GRANT', week);
   appendEvent(state, week, events, 'SCHOOL_YEAR_COMPLETED', {
     schoolYearIndex: week.schoolYearIndex,
     activePlayers: state.team.activePlayerIds.length,

@@ -8,6 +8,8 @@
 | failed command zero contamination | application session            | transaction tests           |
 | unique and week-aligned event IDs | domain event ID contract       | full-run audit ID test      |
 | distinguishable saved audit tail  | application/persistence Schema | save/restore audit ID test  |
+| annual grants at real year end    | domain budget ledger resolver  | 40/80/120 full-run test     |
+| no future persisted weeks         | domain state invariants        | state/save rejection tests  |
 | match model A invariants          | domain model A                 | statistics tests            |
 | versioned save and backup         | persistence packages           | memory/file/IndexedDB tests |
 | readable CLI and 1,000 runs       | `apps/sim-cli`                 | P01 simulation report       |
