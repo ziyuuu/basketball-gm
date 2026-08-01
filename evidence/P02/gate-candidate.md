@@ -18,5 +18,9 @@ contains `boundary-remediation.md`, passes fresh CI, and passes a fresh detached
 Candidate `584143b97270275eefd8159b13639bbb90c2898d` is also superseded: its fresh detached audit
 found a CommonJS `require` alias false negative. CI run #26 and that audit are historical only.
 
+Candidate `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb` is also superseded: adversarial review found
+capability loss through `new`, `Proxy`, dynamic code generation, property extraction, and callable
+forwarding. CI run #28 and every review tied to that SHA are historical only.
+
 This is implementation-thread evidence for P02-001. It is not Gate B, Gate C, Gate D, or a P02
 completion decision. P02 gameplay, Match/V2 production contracts, and P02-002 remain unstarted.

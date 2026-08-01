@@ -31,9 +31,14 @@ describe('P02-001 boundary checker fixtures', () => {
   it.each([
     ['negative-core-imports-v2', 'Core must not import future V2 production code'],
     ['negative-core-require-alias-v2', 'Core must not import future V2 production code'],
+    ['negative-core-proxy-loader-v2', 'Core must not import future V2 production code'],
     ['negative-v2-imports-legacy-root', 'Future V2 production source must not import Legacy P01'],
     [
       'negative-v2-require-alias-legacy-root',
+      'Future V2 production source must not import Legacy P01',
+    ],
+    [
+      'negative-v2-proxy-loader-legacy-root',
       'Future V2 production source must not import Legacy P01',
     ],
     [
@@ -62,6 +67,10 @@ describe('P02-001 boundary checker fixtures', () => {
       'domain/match must not import a mutable GameState resolver',
     ],
     [
+      'negative-match-proxy-loader-resolver',
+      'domain/match must not import a mutable GameState resolver',
+    ],
+    [
       'negative-match-imports-approved-core-resolver',
       'domain/match must not import a mutable GameState resolver',
     ],
@@ -75,6 +84,14 @@ describe('P02-001 boundary checker fixtures', () => {
       'Production CLI must not call a domain state-change resolver',
     ],
     [
+      'negative-cli-proxy-loader-resolver',
+      'Production CLI must not call a domain state-change resolver',
+    ],
+    [
+      'negative-cli-proxy-module-object-resolver',
+      'Production CLI must not call a domain state-change resolver',
+    ],
+    [
       'negative-cli-module-destructure-assignment',
       'Production CLI must not call a domain state-change resolver',
     ],
@@ -82,6 +99,131 @@ describe('P02-001 boundary checker fixtures', () => {
     [
       'negative-cli-global-object-require-alias',
       'Production CLI must not call a domain state-change resolver',
+    ],
+    ['negative-loader-direct-eval', 'Dynamic code execution is forbidden in production source'],
+    [
+      'negative-loader-function-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    ['negative-loader-new-weakref', 'Dynamic module loaders are forbidden in production source'],
+    ['negative-loader-new-holder', 'Dynamic module loaders are forbidden in production source'],
+    [
+      'negative-loader-reflect-new-array',
+      'Dynamic module loaders are forbidden in production source',
+    ],
+    ['negative-codegen-eval-resolver', 'Dynamic code execution is forbidden in production source'],
+    [
+      'negative-codegen-function-resolver',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    ['negative-codegen-forwarding', 'Dynamic code execution is forbidden in production source'],
+    [
+      'negative-codegen-function-property',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-array-method-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-prototype-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-constructor-destructure',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-reflect-get-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-const-key-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-concat-key-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-function-call-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-array-entries-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-object-method-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-let-key-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-reflect-let-key',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-iife-function-result',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-identity-function-result',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-object-literal-method',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-object-function-property',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-static-class-method',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-instance-class-method',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-object-dynamic-method',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-reflect-dynamic-method',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    ['negative-codegen-identity-call', 'Dynamic code execution is forbidden in production source'],
+    ['negative-codegen-identity-apply', 'Dynamic code execution is forbidden in production source'],
+    ['negative-codegen-identity-bind', 'Dynamic code execution is forbidden in production source'],
+    [
+      'negative-codegen-identity-apply-alias',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    ['negative-codegen-reflect-apply', 'Dynamic code execution is forbidden in production source'],
+    [
+      'negative-codegen-function-tostring-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-array-copywithin-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-object-values-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-math-max-constructor',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-regexp-exec-constructor',
+      'Dynamic code execution is forbidden in production source',
     ],
     ['negative-tsconfig-core-imports-v2', 'Core must not import future V2 production code'],
     [
@@ -129,6 +271,10 @@ describe('P02-001 boundary checker fixtures', () => {
     ['negative-core-imports-legacy', 'Core must not import Legacy P01'],
     ['negative-package-cycle', 'Package cycle'],
     ['negative-cli-module-require', 'Production CLI must not call a domain state-change resolver'],
+    [
+      'negative-cli-new-module-require-resolver',
+      'Production CLI must not call a domain state-change resolver',
+    ],
     [
       'negative-cli-get-builtin-module',
       'Dynamic module loaders are forbidden in production source',

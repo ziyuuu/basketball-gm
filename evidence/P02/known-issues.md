@@ -9,8 +9,10 @@
   reimplemented or weakened in this slice.
 - Candidate `930fb44cf773934c8a0c1f2a0f801f8f600df053` was rejected for boundary false negatives.
   Candidate `584143b97270275eefd8159b13639bbb90c2898d` was then rejected when fresh detached audit
-  found a CommonJS loader-alias false negative. Their CI and audit results are historical only and
-  cannot authorize merge. The next candidate requires fresh exact-SHA CI and a fresh detached
-  audit.
+  found a CommonJS loader-alias false negative. Candidate
+  `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb` was then rejected for `new`/`Proxy`, dynamic-code,
+  property-extraction, and callable-forwarding false negatives. Their CI and review results are
+  historical only and cannot authorize merge. The next candidate requires fresh exact-SHA CI and
+  a fresh detached audit.
 - This evidence is implementation-thread evidence only and does not replace CI, independent audit,
   Gate B/C/D, or Owner merge confirmation.

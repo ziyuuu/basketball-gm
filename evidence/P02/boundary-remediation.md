@@ -4,9 +4,10 @@
 
 - Owner-rejected candidate: `930fb44cf773934c8a0c1f2a0f801f8f600df053`
 - Fresh-audit-rejected candidate: `584143b97270275eefd8159b13639bbb90c2898d`
+- Adversarial-review-rejected candidate: `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb`
 - Parent main: `5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`
-- Disposition: both candidates were rejected and not merged
-- Consequence: CI runs #24/#26 and every audit tied to either SHA are invalid for merge
+- Disposition: all three candidates were rejected and not merged
+- Consequence: CI runs #24/#26/#28 and every audit tied to those SHAs are invalid for merge
   authorization
 
 ## Pre-fix reproduction
@@ -37,6 +38,13 @@ load('protected-module');
 All four variants incorrectly returned exit 0. Candidate `584143b97270275eefd8159b13639bbb90c2898d`
 and CI run #26 were therefore invalidated before merge authorization.
 
+The next replacement candidate still lost protected capabilities through `new` expressions,
+`Proxy`, dynamic code generation, property extraction, and general-purpose forwarding helpers.
+Examples included `new Proxy(module.require.bind(null), {})`, `eval`, `Function`, derived
+`.constructor` access, `Reflect.get`, and returned/forwarded callable values. Candidate
+`e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb` and CI run #28 were therefore invalidated before
+merge authorization.
+
 ## Remediation design
 
 - TypeScript AST extraction covers static imports/re-exports, import-equals, import types, dynamic
@@ -45,9 +53,13 @@ and CI run #26 were therefore invalidated before merge authorization.
   not variable text. Fixed-point analysis follows aliases, reassignment, object destructuring,
   default values, static computed keys, `globalThis`, `module`, `process`, `createRequire`, and
   `getBuiltinModule` while preserving legitimate shadowed parameters.
-- `bind`, `call`, and `apply` invocation forwarding retains loader/factory capabilities. Unsupported
-  wrappers, containers, returns, exports, member access, dynamic keys, or cross-file loader escape
-  fail closed instead of silently losing the edge.
+- `new`, `Proxy`, `Reflect.get`, `Reflect.apply`, `bind`, `call`, and `apply` retain loader and
+  dynamic-code capabilities. Function parameters/returns, IIFEs, object/class/array members, static
+  and computed property keys, destructuring, and common built-in return paths are analyzed to a
+  fixed point. Unsupported loader escape still fails closed instead of silently losing the edge.
+- Ambient `eval`, `Function`, `globalThis` aliases, derived Function constructors, and their
+  call/apply/bind/new forms are rejected in production source before generated code can hide a
+  protected import. Symbol identity preserves legitimate local shadows and injected functions.
 - Relative, workspace-package, `package.json#imports`, `tsconfig.paths`, and `baseUrl` specifiers
   resolve to real source targets, including `.js` to `.ts` mapping and wildcard specificity.
   Conditional package targets and matched-but-unresolved TypeScript aliases fail closed.
@@ -74,20 +86,21 @@ and CI run #26 were therefore invalidated before merge authorization.
 
 ## Independent negative proof
 
-`tests/p02-001-boundaries.test.ts` now runs two positive and 54 negative fixture roots. The four
+`tests/p02-001-boundaries.test.ts` now runs two positive and 98 negative fixture roots. The four
 Owner-blocking cases, no-suffix root, compatibility-wrapper reachability, approved
 `operation-week-session` path, TypeScript path/baseUrl aliases, an unmanifested alias target,
 dynamic import, and non-static import cases require exit 1 and independently assert their intended
 diagnostic. Separate assertions cover arbitrary resolvers hidden under `core/**`, package-import
 aliases and conditions, relative Match/Web edges, a source-derived package cycle, loader aliases,
-loader escape, and forwarded CommonJS/Node loader calls. A separate positive fixture proves locally
-injected `require` and `globalThis` parameters do not inherit ambient loader capability.
+loader escape, `new`/`Proxy` forwarding, dynamic code generation, property extraction, container
+members, function returns, and call/apply/bind/Reflect forwarding. Separate positive cases prove
+locally injected loader-like names and ordinary nested/custom constructors remain legal.
 
 After remediation:
 
-- focused boundary suite: 56/56 passed;
-- full `pnpm check`: 10 files / 87 tests passed, including Web and CLI builds;
-- directed regression: 8 files / 83 tests passed;
+- focused boundary suite: 100/100 passed;
+- full `pnpm check`: 10 files / 131 tests passed, including Web and CLI builds;
+- directed regression: 8 files / 127 tests passed;
 - both frozen state/replay hash pairs remained unchanged;
 - 1,000/1,000 batch runs completed with every failure/mismatch/violation count at zero;
 - P00/P01/P01-M1 evidence trees and manifest file hashes remained unchanged.

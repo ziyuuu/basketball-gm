@@ -31,6 +31,13 @@ Replacement candidate `584143b97270275eefd8159b13639bbb90c2898d` then failed its
 audit because `const load = require; load(...)` could still hide all four protected edges. CI run
 #26 and that audit are also invalid for any later candidate.
 
+Candidate `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb` was then invalidated when adversarial review
+found protected capabilities could still disappear through `new`, `Proxy`, dynamic code generation,
+property extraction, and callable forwarding. Examples included
+`new Proxy(module.require.bind(null), {})`, `eval`, `Function`, derived `.constructor` access,
+`Reflect.get`, and returned/forwarded functions. CI run #28 and every review tied to that SHA are
+also invalid for any later candidate.
+
 Before changing the checker, each isolated fixture below incorrectly exited 0:
 
 - `negative-core-imports-v2`;
@@ -38,17 +45,20 @@ Before changing the checker, each isolated fixture below incorrectly exited 0:
 - `negative-match-imports-resolver`, using the unrelated resolver name `fold` and no Legacy import;
 - `negative-cli-resolver`, importing and calling `fold` through an alias.
 
-The remediation replaces function-name matching with symbol-scoped TypeScript-AST import records,
-fixed-point loader capability propagation, resolved workspace/package-import/TypeScript-path module
-edges, explicit Legacy compatibility-root classification, transitive Legacy/V2 reachability, an
-exact Match RNG-primitive + `match/**` allowed surface, and a fail-closed CLI read-only domain import
-list. Wildcard precedence, conditional and legacy package entrypoints, `baseUrl`, deep imports,
-out-of-graph/test bridges, Vite loaders/HTML entries, Node/CommonJS loader aliases and escape,
-triple-slash references, and source-query suffixes are covered. The fixture suite now has two
-positive fixtures and 54 negative fixtures. The four Owner-blocking cases plus approved-path,
-compatibility-wrapper, TypeScript alias, dynamic/non-static import, relative cross-package,
-source-derived cycle, binding shadow, destructuring, global/process/module chains, and forwarded
-`bind`/`call`/`apply` cases have explicit assertions.
+The remediation replaces function-name matching with symbol-scoped TypeScript-AST import records
+and fixed-point capability propagation, plus resolved workspace/package-import/TypeScript-path
+module edges, explicit Legacy compatibility-root classification, transitive Legacy/V2 reachability,
+an exact Match RNG-primitive + `match/**` allowed surface, and a fail-closed CLI read-only domain
+import list. Wildcard precedence, conditional and legacy package entrypoints, `baseUrl`, deep
+imports, out-of-graph/test bridges, Vite loaders/HTML entries, Node/CommonJS loaders, triple-slash
+references, and source-query suffixes are covered. Capabilities are retained through `new`, `Proxy`,
+`Reflect.get`/`Reflect.apply`, property extraction, object/class/array members, function returns,
+IIFEs, and call/apply/bind forwarding; ambient eval/Function constructors are forbidden before
+generated code can hide an edge. The fixture suite now has two positive fixtures and 98 negative
+fixtures. Every fixture root is referenced exactly once. The four Owner-blocking cases plus
+approved-path, compatibility-wrapper, TypeScript alias, dynamic/non-static import, relative
+cross-package, source-derived cycle, binding shadow, ordinary constructor, loader escape,
+new/Proxy/codegen, container, and forwarding cases have explicit assertions.
 
 ## Final checks
 
@@ -57,7 +67,7 @@ pnpm check
 ```
 
 Passed: formatting, ESLint, TypeScript, boundary check, Web build, CLI build, and 10 test files /
-87 tests. The original 29 tests remain; P02-001 adds 58 scaffold/boundary tests.
+131 tests. The original 29 tests remain; P02-001 adds 102 scaffold/boundary tests.
 
 ```bash
 pnpm exec vitest run \
@@ -71,7 +81,7 @@ pnpm exec vitest run \
   tests/p02-001-legacy-subpaths.test.ts
 ```
 
-Passed: 8 test files / 83 tests. This includes P01-M1's 17 re-signed attack rejections, eight legal
+Passed: 8 test files / 127 tests. This includes P01-M1's 17 re-signed attack rejections, eight legal
 annual-grant boundaries, root/Legacy export identity, memory latest→backup equivalence, Node and
 IndexedDB persistence tests, and isolated boundary positive/negative fixtures.
 
@@ -82,7 +92,9 @@ match→application/persistence or mutable state, Web import/dependency, arbitra
 mutation imports, non-static imports, relative cross-package edges, and manifest- or source-derived
 package cycles. Package-import and TypeScript path aliases, wildcard precedence, conditional
 targets, `baseUrl`, unmanifested internal targets, CommonJS aliases, loader escape, and Node loader
-factories are resolved or rejected fail-closed.
+factories are resolved or rejected fail-closed. New-expression, Proxy, dynamic-code constructor,
+property/container, return-flow, and call/apply/bind/Reflect forwarding cases are independently
+rejected, while local shadowing and ordinary constructors remain accepted.
 
 Historical integrity checks passed:
 

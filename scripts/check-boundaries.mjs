@@ -229,6 +229,12 @@ function extractImportRecords(source, file) {
     ['global:process', new Set(['object:process'])],
     ['global:global', new Set(['object:global'])],
     ['global:globalThis', new Set(['object:global'])],
+    ['global:Proxy', new Set(['constructor:proxy', 'value:function'])],
+    ['global:eval', new Set(['codegen:eval'])],
+    ['global:Function', new Set(['codegen:function-constructor'])],
+    ['global:Object', new Set(['object:builtin-object', 'value:function'])],
+    ['global:Reflect', new Set(['object:reflect'])],
+    ['global:Array', new Set(['value:function'])],
   ]);
 
   function isRuntimeBinding(symbol) {
@@ -242,7 +248,21 @@ function extractImportRecords(source, file) {
   function bindingKey(identifier) {
     const symbol = checker.getSymbolAtLocation(identifier);
     if (symbol && isRuntimeBinding(symbol)) return symbol;
-    if (['require', 'module', 'process', 'global', 'globalThis'].includes(identifier.text)) {
+    if (
+      [
+        'require',
+        'module',
+        'process',
+        'global',
+        'globalThis',
+        'Proxy',
+        'eval',
+        'Function',
+        'Object',
+        'Reflect',
+        'Array',
+      ].includes(identifier.text)
+    ) {
       return `global:${identifier.text}`;
     }
     return symbol ?? `unbound:${identifier.text}`;
@@ -316,6 +336,95 @@ function extractImportRecords(source, file) {
     }
   }
 
+  const memberCapabilityPrefix = 'member:';
+  const staticMemberCapabilityPrefix = 'static-member:';
+  const instanceMemberCapabilityPrefix = 'instance-member:';
+  const returnArgumentCapabilityPrefix = 'function:return-argument:';
+  const returnFixedCapabilityPrefix = 'function:return-fixed:';
+
+  function encodedMemberCapability(prefix, property, capability) {
+    return `${prefix}${encodeURIComponent(property)}:${capability}`;
+  }
+
+  function decodedMemberCapability(capability, prefix, property) {
+    if (!capability.startsWith(prefix)) return undefined;
+    const remainder = capability.slice(prefix.length);
+    const separator = remainder.indexOf(':');
+    if (separator < 0 || decodeURIComponent(remainder.slice(0, separator)) !== property) {
+      return undefined;
+    }
+    return remainder.slice(separator + 1);
+  }
+
+  function classCapabilities(declaration) {
+    const result = new Set(['value:function']);
+    for (const member of declaration.members) {
+      if (!member.name) continue;
+      const property = staticPropertyName(member.name);
+      if (property === undefined || property === 'constructor') continue;
+      let memberCapabilities = new Set();
+      if (ts.isMethodDeclaration(member)) {
+        memberCapabilities = new Set(['value:function']);
+      } else if (ts.isPropertyDeclaration(member) && member.initializer) {
+        memberCapabilities = capabilitiesForExpression(member.initializer);
+      }
+      const prefix = member.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword,
+      )
+        ? staticMemberCapabilityPrefix
+        : instanceMemberCapabilityPrefix;
+      for (const capability of memberCapabilities) {
+        result.add(encodedMemberCapability(prefix, property, capability));
+      }
+    }
+    return result;
+  }
+
+  function functionValueCapabilities(declaration) {
+    const result = new Set(['value:function']);
+    const parameterIndexes = new Map(
+      declaration.parameters
+        .filter((parameter) => ts.isIdentifier(parameter.name))
+        .map((parameter) => [
+          bindingKey(parameter.name),
+          declaration.parameters.indexOf(parameter),
+        ]),
+    );
+    function visitReturn(node) {
+      if (node !== declaration.body && ts.isFunctionLike(node)) return;
+      const expression =
+        ts.isArrowFunction(declaration) && !ts.isBlock(declaration.body)
+          ? declaration.body
+          : ts.isReturnStatement(node)
+            ? node.expression
+            : undefined;
+      if (expression) {
+        const current = unwrapExpression(expression);
+        if (ts.isIdentifier(current)) {
+          const parameterIndex = parameterIndexes.get(bindingKey(current));
+          if (parameterIndex !== undefined) {
+            result.add(`${returnArgumentCapabilityPrefix}${parameterIndex}`);
+          }
+        }
+        if (ts.isArrowFunction(declaration) && !ts.isBlock(declaration.body)) return;
+      }
+      ts.forEachChild(node, visitReturn);
+    }
+    visitReturn(declaration.body);
+    return result;
+  }
+
+  function seedFunctionValues(node) {
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      addCapabilities(node.name, functionValueCapabilities(node));
+    }
+    if (ts.isClassDeclaration(node) && node.name) {
+      addCapabilities(node.name, classCapabilities(node));
+    }
+    ts.forEachChild(node, seedFunctionValues);
+  }
+  seedFunctionValues(sourceFile);
+
   function unwrapExpression(expression) {
     let current = expression;
     while (
@@ -334,12 +443,8 @@ function extractImportRecords(source, file) {
   function accessedProperty(expression) {
     const current = unwrapExpression(expression);
     if (ts.isPropertyAccessExpression(current)) return current.name.text;
-    if (
-      ts.isElementAccessExpression(current) &&
-      current.argumentExpression &&
-      ts.isStringLiteralLike(unwrapExpression(current.argumentExpression))
-    ) {
-      return unwrapExpression(current.argumentExpression).text;
+    if (ts.isElementAccessExpression(current) && current.argumentExpression) {
+      return staticStringExpression(current.argumentExpression);
     }
     return undefined;
   }
@@ -347,8 +452,7 @@ function extractImportRecords(source, file) {
   function staticPropertyName(name) {
     if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) return name.text;
     if (ts.isComputedPropertyName(name)) {
-      const expression = unwrapExpression(name.expression);
-      return ts.isStringLiteralLike(expression) ? expression.text : undefined;
+      return staticStringExpression(name.expression);
     }
     return undefined;
   }
@@ -356,6 +460,28 @@ function extractImportRecords(source, file) {
   function propertyCapabilities(capabilities, property) {
     const result = new Set();
     for (const capability of capabilities) {
+      if (
+        property === undefined &&
+        (capability.startsWith(memberCapabilityPrefix) ||
+          capability.startsWith(staticMemberCapabilityPrefix)) &&
+        capability.endsWith(':value:function')
+      ) {
+        result.add('codegen:unknown-function-property');
+      }
+      if (property !== undefined) {
+        const memberCapability = decodedMemberCapability(
+          capability,
+          memberCapabilityPrefix,
+          property,
+        );
+        const staticMemberCapability = decodedMemberCapability(
+          capability,
+          staticMemberCapabilityPrefix,
+          property,
+        );
+        if (memberCapability !== undefined) result.add(memberCapability);
+        if (staticMemberCapability !== undefined) result.add(staticMemberCapability);
+      }
       if (capability === 'object:module' && property === 'require') {
         result.add('loader:module-require');
       }
@@ -377,6 +503,116 @@ function extractImportRecords(source, file) {
       if (capability === 'object:global' && ['global', 'globalThis'].includes(property)) {
         result.add('object:global');
       }
+      if (capability === 'object:global' && property === 'Proxy') {
+        result.add('constructor:proxy');
+        result.add('value:function');
+      }
+      if (capability === 'object:global' && property === 'eval') {
+        result.add('codegen:eval');
+      }
+      if (capability === 'object:global' && property === 'Function') {
+        result.add('codegen:function-constructor');
+      }
+      if (capability === 'object:global' && property === 'Object') {
+        result.add('object:builtin-object');
+        result.add('value:function');
+      }
+      if (capability === 'object:global' && property === 'Reflect') {
+        result.add('object:reflect');
+      }
+      if (capability === 'object:global' && property === 'Array') {
+        result.add('value:function');
+      }
+      if (capability === 'object:builtin-object' && property === 'getPrototypeOf') {
+        result.add('callable:get-prototype-of');
+      }
+      if (capability === 'object:reflect' && property === 'get') {
+        result.add('callable:reflect-get');
+      }
+      if (capability === 'object:reflect' && property === 'apply') {
+        result.add('callable:reflect-apply');
+      }
+      if (
+        capability === 'object:array' &&
+        [
+          'at',
+          'concat',
+          'every',
+          'entries',
+          'filter',
+          'find',
+          'findIndex',
+          'flat',
+          'flatMap',
+          'forEach',
+          'includes',
+          'indexOf',
+          'join',
+          'keys',
+          'map',
+          'pop',
+          'push',
+          'reduce',
+          'reduceRight',
+          'reverse',
+          'shift',
+          'slice',
+          'some',
+          'sort',
+          'splice',
+          'unshift',
+          'values',
+        ].includes(property ?? '')
+      ) {
+        result.add('value:function');
+      }
+      if (
+        capability === 'object:plain' &&
+        [
+          '__defineGetter__',
+          '__defineSetter__',
+          '__lookupGetter__',
+          '__lookupSetter__',
+          'hasOwnProperty',
+          'isPrototypeOf',
+          'propertyIsEnumerable',
+          'toLocaleString',
+          'toString',
+          'valueOf',
+        ].includes(property ?? '')
+      ) {
+        result.add('value:function');
+      }
+      if (
+        ['object:array', 'object:plain', 'object:constructed-instance'].includes(capability) &&
+        property === 'constructor'
+      ) {
+        result.add('value:function');
+      }
+      if (
+        ['value:function', 'object:function-prototype'].includes(capability) &&
+        property === 'constructor'
+      ) {
+        result.add('codegen:function-constructor');
+      }
+      if (capability === 'value:function' && ['apply', 'bind', 'call'].includes(property ?? '')) {
+        result.add('value:function');
+      }
+      if (
+        ['value:function', 'object:function-prototype'].includes(capability) &&
+        property === undefined
+      ) {
+        result.add('codegen:unknown-function-property');
+      }
+      if (
+        (capability.startsWith('codegen:') || capability === 'constructor:proxy') &&
+        property === 'constructor'
+      ) {
+        result.add('codegen:function-constructor');
+      }
+      if (capability.startsWith('codegen:') && ['name', 'length'].includes(property ?? '')) {
+        result.add('value:metadata');
+      }
       if (capability.startsWith('loader:') && property === 'resolve') {
         result.add('loader:require-resolve');
       }
@@ -384,7 +620,39 @@ function extractImportRecords(source, file) {
     return result;
   }
 
-  function staticStringExpression(expression) {
+  function staticStringExpression(expression, seen = new Set()) {
+    if (!expression) return undefined;
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isStringLiteralLike(unwrapped) || ts.isNoSubstitutionTemplateLiteral(unwrapped)) {
+      return unwrapped.text;
+    }
+    if (
+      ts.isBinaryExpression(unwrapped) &&
+      unwrapped.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      const left = staticStringExpression(unwrapped.left, seen);
+      const right = staticStringExpression(unwrapped.right, seen);
+      return left === undefined || right === undefined ? undefined : left + right;
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      const symbol = checker.getSymbolAtLocation(unwrapped);
+      if (!symbol || seen.has(symbol)) return undefined;
+      const nextSeen = new Set(seen).add(symbol);
+      for (const declaration of symbol.declarations ?? []) {
+        if (
+          ts.isVariableDeclaration(declaration) &&
+          declaration.initializer &&
+          (ts.getCombinedNodeFlags(declaration.parent) & ts.NodeFlags.Const) !== 0
+        ) {
+          const value = staticStringExpression(declaration.initializer, nextSeen);
+          if (value !== undefined) return value;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  function literalStringExpression(expression) {
     if (!expression) return undefined;
     const unwrapped = unwrapExpression(expression);
     return ts.isStringLiteralLike(unwrapped) ? unwrapped.text : undefined;
@@ -394,12 +662,39 @@ function extractImportRecords(source, file) {
     return (
       capability.startsWith('loader:') ||
       capability === 'callable:get-builtin-module' ||
-      capability === 'factory:create-require'
+      capability === 'factory:create-require' ||
+      capability === 'callable:get-prototype-of' ||
+      capability === 'callable:reflect-get' ||
+      capability === 'callable:reflect-apply' ||
+      capability === 'value:function' ||
+      capability.startsWith('function:return-') ||
+      capability.startsWith('codegen:')
     );
+  }
+
+  function isForwardableCapability(capability) {
+    return isInvokableCapability(capability) || capability === 'constructor:proxy';
   }
 
   function isModuleLoadingCapability(capability) {
     return ['loader:require', 'loader:module-require'].includes(capability);
+  }
+
+  function arrayElementsForExpression(expression, seen = new Set()) {
+    if (!expression) return [];
+    const current = unwrapExpression(expression);
+    if (ts.isArrayLiteralExpression(current)) return [...current.elements];
+    if (!ts.isIdentifier(current)) return [];
+    const symbol = checker.getSymbolAtLocation(current);
+    if (!symbol || seen.has(symbol)) return [];
+    const nextSeen = new Set(seen).add(symbol);
+    for (const declaration of symbol.declarations ?? []) {
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+        const elements = arrayElementsForExpression(declaration.initializer, nextSeen);
+        if (elements.length > 0) return elements;
+      }
+    }
+    return [];
   }
 
   function invocationForCall(call) {
@@ -411,32 +706,195 @@ function extractImportRecords(source, file) {
       const forwardedCapabilities = capabilitiesForExpression(called.expression);
       if ([...forwardedCapabilities].some(isInvokableCapability)) {
         const method = accessedProperty(called);
-        const argumentList = unwrapExpression(call.arguments[1]);
+        const argumentList = arrayElementsForExpression(call.arguments[1]);
         return {
-          arguments:
-            method === 'call'
-              ? [...call.arguments].slice(1)
-              : ts.isArrayLiteralExpression(argumentList)
-                ? [...argumentList.elements]
-                : [],
+          arguments: method === 'call' ? [...call.arguments].slice(1) : argumentList,
           capabilities: forwardedCapabilities,
+          target: called.expression,
         };
       }
     }
     return {
       arguments: [...call.arguments],
       capabilities: capabilitiesForExpression(called),
+      target: called,
     };
   }
 
+  function invocationResultCapabilities(invocation) {
+    const result = new Set();
+    const calledCapabilities = invocation.capabilities;
+    const firstArgument = literalStringExpression(invocation.arguments[0]);
+    if (calledCapabilities.has('factory:create-require')) result.add('loader:require');
+    if (
+      calledCapabilities.has('callable:get-builtin-module') &&
+      dynamicLoaderSpecifiers.has(firstArgument)
+    ) {
+      result.add('object:module');
+    }
+    if ([...calledCapabilities].some(isModuleLoadingCapability)) {
+      if (dynamicLoaderSpecifiers.has(firstArgument)) result.add('object:module');
+      if (['node:process', 'process'].includes(firstArgument)) result.add('object:process');
+    }
+    if (
+      calledCapabilities.has('callable:get-prototype-of') &&
+      capabilitiesForExpression(invocation.arguments[0]).has('value:function')
+    ) {
+      result.add('object:function-prototype');
+    }
+    if (calledCapabilities.has('callable:reflect-get')) {
+      const targetCapabilities = capabilitiesForExpression(invocation.arguments[0]);
+      const property = staticStringExpression(invocation.arguments[1]);
+      for (const capability of propertyCapabilities(targetCapabilities, property)) {
+        result.add(capability);
+      }
+    }
+    for (const capability of calledCapabilities) {
+      if (capability.startsWith(returnArgumentCapabilityPrefix)) {
+        const index = Number.parseInt(capability.slice(returnArgumentCapabilityPrefix.length), 10);
+        for (const returnedCapability of capabilitiesForExpression(invocation.arguments[index])) {
+          result.add(returnedCapability);
+        }
+      }
+      if (capability.startsWith(returnFixedCapabilityPrefix)) {
+        result.add(capability.slice(returnFixedCapabilityPrefix.length));
+      }
+    }
+    return result;
+  }
+
+  function objectLiteralCapabilities(literal) {
+    const result = new Set(['object:plain']);
+    for (const propertyNode of literal.properties) {
+      if (!propertyNode.name) continue;
+      const property = staticPropertyName(propertyNode.name);
+      if (property === undefined) continue;
+      let memberCapabilities = new Set();
+      if (ts.isMethodDeclaration(propertyNode)) {
+        memberCapabilities = new Set(['value:function']);
+      } else if (ts.isPropertyAssignment(propertyNode)) {
+        memberCapabilities = capabilitiesForExpression(propertyNode.initializer);
+      } else if (ts.isShorthandPropertyAssignment(propertyNode)) {
+        memberCapabilities = capabilitiesForExpression(propertyNode.name);
+      }
+      for (const capability of memberCapabilities) {
+        result.add(encodedMemberCapability(memberCapabilityPrefix, property, capability));
+      }
+    }
+    return result;
+  }
+
+  const summarizingFunctions = new Set();
+  const parameterCapabilityStack = [];
+
+  function functionNodeForExpression(expression) {
+    const current = unwrapExpression(expression);
+    if (ts.isFunctionExpression(current) || ts.isArrowFunction(current)) return current;
+    if (!ts.isIdentifier(current)) return undefined;
+    const symbol = checker.getSymbolAtLocation(current);
+    for (const declaration of symbol?.declarations ?? []) {
+      if (ts.isFunctionDeclaration(declaration)) return declaration;
+      if (
+        ts.isVariableDeclaration(declaration) &&
+        declaration.initializer &&
+        (ts.isFunctionExpression(declaration.initializer) ||
+          ts.isArrowFunction(declaration.initializer))
+      ) {
+        return declaration.initializer;
+      }
+    }
+    return undefined;
+  }
+
+  function addParameterCapabilities(name, capabilities, target) {
+    if (ts.isIdentifier(name)) {
+      target.set(bindingKey(name), new Set(capabilities));
+      return;
+    }
+    if (ts.isObjectBindingPattern(name)) {
+      for (const element of name.elements) {
+        const property = element.propertyName
+          ? staticPropertyName(element.propertyName)
+          : ts.isIdentifier(element.name)
+            ? element.name.text
+            : undefined;
+        addParameterCapabilities(
+          element.name,
+          propertyCapabilities(capabilities, property),
+          target,
+        );
+      }
+    }
+  }
+
+  function functionReturnCapabilities(expression, argumentsList) {
+    const declaration = functionNodeForExpression(expression);
+    if (!declaration || summarizingFunctions.has(declaration)) return new Set();
+    summarizingFunctions.add(declaration);
+    const parameterCapabilities = new Map();
+    for (const [index, parameter] of declaration.parameters.entries()) {
+      addParameterCapabilities(
+        parameter.name,
+        capabilitiesForExpression(argumentsList[index]),
+        parameterCapabilities,
+      );
+    }
+    parameterCapabilityStack.push(parameterCapabilities);
+    const result = new Set();
+    try {
+      if (ts.isArrowFunction(declaration) && !ts.isBlock(declaration.body)) {
+        for (const capability of capabilitiesForExpression(declaration.body)) {
+          result.add(capability);
+        }
+      } else if (declaration.body) {
+        function visitReturn(node) {
+          if (node !== declaration.body && ts.isFunctionLike(node)) return;
+          if (ts.isReturnStatement(node) && node.expression) {
+            for (const capability of capabilitiesForExpression(node.expression)) {
+              result.add(capability);
+            }
+            return;
+          }
+          ts.forEachChild(node, visitReturn);
+        }
+        visitReturn(declaration.body);
+      }
+    } finally {
+      parameterCapabilityStack.pop();
+      summarizingFunctions.delete(declaration);
+    }
+    return result;
+  }
+
   function capabilitiesForExpression(expression) {
+    if (!expression) return new Set();
     const current = unwrapExpression(expression);
     if (ts.isIdentifier(current)) {
-      return new Set(loaderCapabilities.get(bindingKey(current)) ?? []);
+      const key = bindingKey(current);
+      const result = new Set(loaderCapabilities.get(key) ?? []);
+      for (const parameterCapabilities of parameterCapabilityStack) {
+        for (const capability of parameterCapabilities.get(key) ?? []) result.add(capability);
+      }
+      return result;
     }
+    if (ts.isFunctionExpression(current) || ts.isArrowFunction(current)) {
+      return functionValueCapabilities(current);
+    }
+    if (ts.isClassExpression(current)) return classCapabilities(current);
+    if (ts.isArrayLiteralExpression(current)) return new Set(['object:array']);
+    if (ts.isObjectLiteralExpression(current)) return objectLiteralCapabilities(current);
     if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
       const property = accessedProperty(current);
       const object = unwrapExpression(current.expression);
+      const objectCapabilities = capabilitiesForExpression(object);
+      if (
+        property === 'constructor' &&
+        (ts.isPropertyAccessExpression(object) || ts.isElementAccessExpression(object)) &&
+        accessedProperty(object) !== 'constructor' &&
+        ![...objectCapabilities].some((capability) => capability.startsWith('object:'))
+      ) {
+        return new Set(['codegen:function-constructor']);
+      }
       if (
         ts.isMetaProperty(object) &&
         object.keywordToken === ts.SyntaxKind.ImportKeyword &&
@@ -444,34 +902,84 @@ function extractImportRecords(source, file) {
       ) {
         return new Set(['loader:import-meta-glob']);
       }
-      return propertyCapabilities(capabilitiesForExpression(object), property);
+      return propertyCapabilities(objectCapabilities, property);
     }
     if (ts.isCallExpression(current)) {
       const called = unwrapExpression(current.expression);
-      const result = new Set();
       if (
         (ts.isPropertyAccessExpression(called) || ts.isElementAccessExpression(called)) &&
         accessedProperty(called) === 'bind'
       ) {
+        const result = new Set();
         const boundCapabilities = capabilitiesForExpression(called.expression);
+        const boundArguments = [...current.arguments].slice(1);
         for (const capability of boundCapabilities) {
-          if (isInvokableCapability(capability)) result.add(capability);
+          if (capability.startsWith(returnArgumentCapabilityPrefix)) {
+            const index = Number.parseInt(
+              capability.slice(returnArgumentCapabilityPrefix.length),
+              10,
+            );
+            if (index < boundArguments.length) {
+              for (const returnedCapability of capabilitiesForExpression(boundArguments[index])) {
+                result.add(`${returnFixedCapabilityPrefix}${returnedCapability}`);
+              }
+            } else {
+              result.add(`${returnArgumentCapabilityPrefix}${index - boundArguments.length}`);
+            }
+            continue;
+          }
+          if (isForwardableCapability(capability)) result.add(capability);
+        }
+        for (const returnedCapability of functionReturnCapabilities(
+          called.expression,
+          boundArguments,
+        )) {
+          result.add(`${returnFixedCapabilityPrefix}${returnedCapability}`);
         }
         return result;
       }
       const invocation = invocationForCall(current);
-      const calledCapabilities = invocation.capabilities;
-      const firstArgument = staticStringExpression(invocation.arguments[0]);
-      if (calledCapabilities.has('factory:create-require')) result.add('loader:require');
-      if (
-        calledCapabilities.has('callable:get-builtin-module') &&
-        dynamicLoaderSpecifiers.has(firstArgument)
-      ) {
-        result.add('object:module');
+      if (invocation.capabilities.has('callable:reflect-apply')) {
+        const target = invocation.arguments[0];
+        const reflectedArguments = arrayElementsForExpression(invocation.arguments[2]);
+        const targetInvocation = {
+          arguments: reflectedArguments,
+          capabilities: capabilitiesForExpression(target),
+          target,
+        };
+        const result = invocationResultCapabilities(targetInvocation);
+        for (const capability of functionReturnCapabilities(target, reflectedArguments)) {
+          result.add(capability);
+        }
+        return result;
       }
-      if ([...calledCapabilities].some(isModuleLoadingCapability)) {
-        if (dynamicLoaderSpecifiers.has(firstArgument)) result.add('object:module');
-        if (['node:process', 'process'].includes(firstArgument)) result.add('object:process');
+      const result = invocationResultCapabilities(invocation);
+      for (const capability of functionReturnCapabilities(
+        invocation.target ?? called,
+        invocation.arguments,
+      )) {
+        result.add(capability);
+      }
+      return result;
+    }
+    if (ts.isNewExpression(current)) {
+      const constructorCapabilities = capabilitiesForExpression(current.expression);
+      const argumentsList = [...(current.arguments ?? [])];
+      if (constructorCapabilities.has('constructor:proxy')) {
+        return capabilitiesForExpression(argumentsList[0]);
+      }
+      const result = invocationResultCapabilities({
+        arguments: argumentsList,
+        capabilities: constructorCapabilities,
+      });
+      if (constructorCapabilities.has('value:function')) {
+        result.add('object:constructed-instance');
+      }
+      for (const capability of constructorCapabilities) {
+        if (!capability.startsWith(instanceMemberCapabilityPrefix)) continue;
+        result.add(
+          `${memberCapabilityPrefix}${capability.slice(instanceMemberCapabilityPrefix.length)}`,
+        );
       }
       return result;
     }
@@ -611,6 +1119,14 @@ function extractImportRecords(source, file) {
     );
   }
 
+  function hasCodegenCapability(capabilities) {
+    return [...capabilities].some((capability) => capability.startsWith('codegen:'));
+  }
+
+  function hasBoundaryCapability(capabilities) {
+    return hasLoaderCapability(capabilities) || hasCodegenCapability(capabilities);
+  }
+
   function isSupportedCapabilityTarget(target, capabilities) {
     const current = unwrapExpression(target);
     if (ts.isIdentifier(current)) return true;
@@ -622,14 +1138,14 @@ function extractImportRecords(source, file) {
     }
     if (ts.isObjectBindingPattern(current)) {
       return current.elements.every((element) => {
-        if (element.dotDotDotToken) return !hasLoaderCapability(capabilities);
+        if (element.dotDotDotToken) return !hasBoundaryCapability(capabilities);
         const property = element.propertyName
           ? staticPropertyName(element.propertyName)
           : ts.isIdentifier(element.name)
             ? element.name.text
             : undefined;
         if (element.propertyName && property === undefined) {
-          return !hasLoaderCapability(capabilities);
+          return !hasBoundaryCapability(capabilities);
         }
         return isSupportedCapabilityTarget(
           element.name,
@@ -639,16 +1155,16 @@ function extractImportRecords(source, file) {
     }
     if (ts.isObjectLiteralExpression(current)) {
       return current.properties.every((property) => {
-        if (ts.isSpreadAssignment(property)) return !hasLoaderCapability(capabilities);
+        if (ts.isSpreadAssignment(property)) return !hasBoundaryCapability(capabilities);
         if (ts.isShorthandPropertyAssignment(property)) {
           return isSupportedCapabilityTarget(
             property.name,
             propertyCapabilities(capabilities, property.name.text),
           );
         }
-        if (!ts.isPropertyAssignment(property)) return !hasLoaderCapability(capabilities);
+        if (!ts.isPropertyAssignment(property)) return !hasBoundaryCapability(capabilities);
         const propertyName = staticPropertyName(property.name);
-        if (propertyName === undefined) return !hasLoaderCapability(capabilities);
+        if (propertyName === undefined) return !hasBoundaryCapability(capabilities);
         return isSupportedCapabilityTarget(
           property.initializer,
           propertyCapabilities(capabilities, propertyName),
@@ -656,9 +1172,9 @@ function extractImportRecords(source, file) {
       });
     }
     if (ts.isArrayBindingPattern(current) || ts.isArrayLiteralExpression(current)) {
-      return !hasLoaderCapability(capabilities);
+      return !hasBoundaryCapability(capabilities);
     }
-    return !hasLoaderCapability(capabilities);
+    return !hasBoundaryCapability(capabilities);
   }
 
   function containsNode(container, node) {
@@ -694,6 +1210,18 @@ function extractImportRecords(source, file) {
     return false;
   }
 
+  function isTypeOnlyReference(identifier) {
+    if (ts.isPartOfTypeNode(identifier)) return true;
+    for (
+      let parent = identifier.parent;
+      parent && !ts.isStatement(parent);
+      parent = parent.parent
+    ) {
+      if (ts.isTypeQueryNode(parent)) return true;
+    }
+    return false;
+  }
+
   function isSupportedAliasCarrier(identifier) {
     for (let parent = identifier.parent; parent; parent = parent.parent) {
       if (
@@ -703,7 +1231,7 @@ function extractImportRecords(source, file) {
       ) {
         const capabilities = capabilitiesForExpression(parent.initializer);
         return (
-          hasLoaderCapability(capabilities) &&
+          hasBoundaryCapability(capabilities) &&
           isSupportedCapabilityTarget(parent.name, capabilities)
         );
       }
@@ -714,7 +1242,7 @@ function extractImportRecords(source, file) {
       ) {
         const capabilities = capabilitiesForExpression(parent.initializer);
         return (
-          hasLoaderCapability(capabilities) &&
+          hasBoundaryCapability(capabilities) &&
           isSupportedCapabilityTarget(parent.name, capabilities)
         );
       }
@@ -730,7 +1258,7 @@ function extractImportRecords(source, file) {
       ) {
         const capabilities = capabilitiesForExpression(parent.right);
         return (
-          hasLoaderCapability(capabilities) &&
+          hasBoundaryCapability(capabilities) &&
           isSupportedCapabilityTarget(parent.left, capabilities)
         );
       }
@@ -769,6 +1297,18 @@ function extractImportRecords(source, file) {
     ) {
       return true;
     }
+    for (let ancestor = parent; ancestor && !ts.isStatement(ancestor); ancestor = ancestor.parent) {
+      if (!ts.isCallExpression(ancestor) || ancestor.arguments.length === 0) continue;
+      const called = unwrapExpression(ancestor.expression);
+      if (
+        (ts.isPropertyAccessExpression(called) || ts.isElementAccessExpression(called)) &&
+        ['bind', 'call', 'apply'].includes(accessedProperty(called) ?? '') &&
+        [...capabilitiesForExpression(called.expression)].some(isInvokableCapability) &&
+        containsNode(ancestor.arguments[0], identifier)
+      ) {
+        return true;
+      }
+    }
     let expression = identifier;
     while (
       expression.parent &&
@@ -781,7 +1321,10 @@ function extractImportRecords(source, file) {
     ) {
       expression = expression.parent;
     }
-    if (ts.isCallExpression(expression.parent) && expression.parent.expression === expression) {
+    if (
+      (ts.isCallExpression(expression.parent) || ts.isNewExpression(expression.parent)) &&
+      expression.parent.expression === expression
+    ) {
       return true;
     }
     if (
@@ -796,7 +1339,7 @@ function extractImportRecords(source, file) {
         (capabilities.has('object:module') && property === 'exports') ||
         (capabilities.has('object:process') && property !== undefined) ||
         (capabilities.has('object:global') && property !== undefined) ||
-        ([...capabilities].some((capability) => capability.startsWith('loader:')) &&
+        ([...capabilities].some(isInvokableCapability) &&
           ['bind', 'call', 'apply'].includes(property ?? ''))
       ) {
         return true;
@@ -806,6 +1349,13 @@ function extractImportRecords(source, file) {
   }
 
   let hasLoaderEscape = false;
+  let hasCodegenEscape = false;
+
+  function markCapabilityEscape(capabilities) {
+    if (hasLoaderCapability(capabilities)) hasLoaderEscape = true;
+    if (hasCodegenCapability(capabilities)) hasCodegenEscape = true;
+  }
+
   function isWithinAssignmentTarget(node) {
     for (let parent = node.parent; parent && !ts.isStatement(parent); parent = parent.parent) {
       if (
@@ -827,10 +1377,11 @@ function extractImportRecords(source, file) {
   function visitLoaderEscapes(node) {
     if (
       ts.isIdentifier(node) &&
-      hasLoaderCapability(capabilitiesForExpression(node)) &&
+      !isTypeOnlyReference(node) &&
+      hasBoundaryCapability(capabilitiesForExpression(node)) &&
       !isSafeLoaderReference(node)
     ) {
-      hasLoaderEscape = true;
+      markCapabilityEscape(capabilitiesForExpression(node));
     }
     if (ts.isCallExpression(node)) {
       const called = unwrapExpression(node.expression);
@@ -838,16 +1389,20 @@ function extractImportRecords(source, file) {
         ts.isPropertyAccessExpression(called) || ts.isElementAccessExpression(called)
           ? accessedProperty(called)
           : undefined;
-      const forwardsKnownLoader =
+      const forwardsKnownCapability =
         ['bind', 'call', 'apply'].includes(forwardingMethod ?? '') &&
         [...capabilitiesForExpression(called.expression)].some(isInvokableCapability);
-      const firstCapabilityArgument = forwardsKnownLoader ? 1 : 0;
-      if (
-        [...node.arguments]
-          .slice(firstCapabilityArgument)
-          .some((argument) => hasLoaderCapability(capabilitiesForExpression(argument)))
-      ) {
-        hasLoaderEscape = true;
+      const firstCapabilityArgument = forwardsKnownCapability ? 1 : 0;
+      for (const argument of [...node.arguments].slice(firstCapabilityArgument)) {
+        markCapabilityEscape(capabilitiesForExpression(argument));
+      }
+    }
+    if (ts.isNewExpression(node)) {
+      const constructorCapabilities = capabilitiesForExpression(node.expression);
+      const wrapsKnownProxy = constructorCapabilities.has('constructor:proxy');
+      const firstCapabilityArgument = wrapsKnownProxy ? 1 : 0;
+      for (const argument of [...(node.arguments ?? [])].slice(firstCapabilityArgument)) {
+        markCapabilityEscape(capabilitiesForExpression(argument));
       }
     }
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
@@ -858,71 +1413,39 @@ function extractImportRecords(source, file) {
         propertyCapabilities(baseCapabilities, property).size === 0 &&
         !['bind', 'call', 'apply'].includes(property ?? '')
       ) {
-        hasLoaderEscape = true;
+        markCapabilityEscape(baseCapabilities);
       }
     }
-    if (
-      ts.isPropertyAssignment(node) &&
-      !isWithinAssignmentTarget(node) &&
-      hasLoaderCapability(capabilitiesForExpression(node.initializer))
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isPropertyAssignment(node) && !isWithinAssignmentTarget(node)) {
+      markCapabilityEscape(capabilitiesForExpression(node.initializer));
     }
-    if (
-      ts.isShorthandPropertyAssignment(node) &&
-      !isWithinAssignmentTarget(node) &&
-      hasLoaderCapability(capabilitiesForExpression(node.name))
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isShorthandPropertyAssignment(node) && !isWithinAssignmentTarget(node)) {
+      markCapabilityEscape(capabilitiesForExpression(node.name));
     }
-    if (
-      ts.isArrayLiteralExpression(node) &&
-      node.elements.some(
-        (element) =>
-          !ts.isOmittedExpression(element) &&
-          hasLoaderCapability(capabilitiesForExpression(element)),
-      )
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isArrayLiteralExpression(node)) {
+      for (const element of node.elements) {
+        if (!ts.isOmittedExpression(element)) {
+          markCapabilityEscape(capabilitiesForExpression(element));
+        }
+      }
     }
-    if (
-      ts.isPropertyDeclaration(node) &&
-      node.initializer &&
-      hasLoaderCapability(capabilitiesForExpression(node.initializer))
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isPropertyDeclaration(node) && node.initializer) {
+      markCapabilityEscape(capabilitiesForExpression(node.initializer));
     }
-    if (
-      ts.isArrowFunction(node) &&
-      !ts.isBlock(node.body) &&
-      hasLoaderCapability(capabilitiesForExpression(node.body))
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isArrowFunction(node) && !ts.isBlock(node.body)) {
+      markCapabilityEscape(capabilitiesForExpression(node.body));
     }
-    if (
-      ts.isSpreadAssignment(node) &&
-      hasLoaderCapability(capabilitiesForExpression(node.expression))
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isSpreadAssignment(node)) {
+      markCapabilityEscape(capabilitiesForExpression(node.expression));
     }
-    if (
-      ts.isTaggedTemplateExpression(node) &&
-      hasLoaderCapability(capabilitiesForExpression(node.tag))
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isTaggedTemplateExpression(node)) {
+      markCapabilityEscape(capabilitiesForExpression(node.tag));
     }
-    if (
-      (ts.isReturnStatement(node) || ts.isThrowStatement(node)) &&
-      node.expression &&
-      hasLoaderCapability(capabilitiesForExpression(node.expression))
-    ) {
-      hasLoaderEscape = true;
+    if ((ts.isReturnStatement(node) || ts.isThrowStatement(node)) && node.expression) {
+      markCapabilityEscape(capabilitiesForExpression(node.expression));
     }
-    if (
-      ts.isExportAssignment(node) &&
-      hasLoaderCapability(capabilitiesForExpression(node.expression))
-    ) {
-      hasLoaderEscape = true;
+    if (ts.isExportAssignment(node)) {
+      markCapabilityEscape(capabilitiesForExpression(node.expression));
     }
     if (
       ts.isBinaryExpression(node) &&
@@ -935,38 +1458,38 @@ function extractImportRecords(source, file) {
     ) {
       const capabilities = capabilitiesForExpression(node.right);
       if (
-        hasLoaderCapability(capabilities) &&
+        hasBoundaryCapability(capabilities) &&
         !isSupportedCapabilityTarget(node.left, capabilities)
       ) {
-        hasLoaderEscape = true;
+        markCapabilityEscape(capabilities);
       }
     }
     if (
       ts.isVariableStatement(node) &&
-      node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
-      node.declarationList.declarations.some((declaration) => {
-        if (!ts.isIdentifier(declaration.name)) return false;
-        return hasLoaderCapability(capabilitiesForExpression(declaration.name));
-      })
+      node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
     ) {
-      hasLoaderEscape = true;
+      for (const declaration of node.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name)) {
+          markCapabilityEscape(capabilitiesForExpression(declaration.name));
+        }
+      }
     }
     if (
       ts.isExportDeclaration(node) &&
       !node.moduleSpecifier &&
       node.exportClause &&
-      ts.isNamedExports(node.exportClause) &&
-      node.exportClause.elements.some((element) => {
-        const localSymbol = checker.getExportSpecifierLocalTargetSymbol(element);
-        return hasLoaderCapability(new Set(loaderCapabilities.get(localSymbol) ?? []));
-      })
+      ts.isNamedExports(node.exportClause)
     ) {
-      hasLoaderEscape = true;
+      for (const element of node.exportClause.elements) {
+        const localSymbol = checker.getExportSpecifierLocalTargetSymbol(element);
+        markCapabilityEscape(new Set(loaderCapabilities.get(localSymbol) ?? []));
+      }
     }
     ts.forEachChild(node, visitLoaderEscapes);
   }
   visitLoaderEscapes(sourceFile);
   if (hasLoaderEscape) addRecord('<loader-escape>', 'loader-escape');
+  if (hasCodegenEscape) addRecord('<dynamic-code-escape>', 'dynamic-code');
 
   function visitCalls(node) {
     if (ts.isImportTypeNode(node)) {
@@ -979,18 +1502,27 @@ function extractImportRecords(source, file) {
       );
     }
 
-    if (ts.isCallExpression(node)) {
+    if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
       const callExpression = ts.skipParentheses(node.expression);
-      const isDynamicImport = callExpression.kind === ts.SyntaxKind.ImportKeyword;
+      const isDynamicImport =
+        ts.isCallExpression(node) && callExpression.kind === ts.SyntaxKind.ImportKeyword;
       const invocation = isDynamicImport
         ? { arguments: [...node.arguments], capabilities: new Set() }
-        : invocationForCall(node);
+        : ts.isCallExpression(node)
+          ? invocationForCall(node)
+          : {
+              arguments: [...(node.arguments ?? [])],
+              capabilities: capabilitiesForExpression(node.expression),
+            };
       const capabilities = invocation.capabilities;
       const loaderCapability = [...capabilities].find((capability) =>
         capability.startsWith('loader:'),
       );
-      const specifier = staticStringExpression(invocation.arguments[0]);
+      const specifier = literalStringExpression(invocation.arguments[0]);
       const isGetBuiltinModule = capabilities.has('callable:get-builtin-module');
+      const isDynamicCode =
+        hasCodegenCapability(capabilities) &&
+        (ts.isCallExpression(node) || (node.arguments?.length ?? 0) > 0);
       if (isDynamicImport || loaderCapability || isGetBuiltinModule) {
         addRecord(
           specifier,
@@ -1001,6 +1533,7 @@ function extractImportRecords(source, file) {
               : loaderCapability.slice('loader:'.length),
         );
       }
+      if (isDynamicCode) addRecord('<dynamic-code>', 'dynamic-code');
     }
     ts.forEachChild(node, visitCalls);
   }
@@ -1768,6 +2301,9 @@ async function runBoundaryCheck(root, { fixture = false } = {}) {
       )
     ) {
       errors.push(`Dynamic module loaders are forbidden in production source: ${entry.path}.`);
+    }
+    if (entry.importRecords.some((record) => record.kind === 'dynamic-code')) {
+      errors.push(`Dynamic code execution is forbidden in production source: ${entry.path}.`);
     }
     if (
       entry.importRecords.some(
