@@ -17,7 +17,7 @@
 | Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`                |
 | Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`                |
 | Engine version               | `0.1.2-p01-r2`                                            |
-| Current decision             | Apply the 12-player baseline amendment before P02-002     |
+| Current decision             | Merge 12-player amendment; first playable Site release at P04 |
 | Current implementation Issue | GitHub #11 (`P02-002`, READY / NOT STARTED)               |
 
 ## Frozen baseline
@@ -68,6 +68,18 @@ The Owner-approved `docs/P02_GAMEPLAY_BASELINE.md` v1.2 is the gameplay authorit
 
 The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.2 is also Owner-approved. It defines architecture,
 migration, test, Issue/PR, Gate, and rollback details without changing the gameplay authority.
+
+## Playable Site decision
+
+- Owner decided on 2026-08-02 that no early P02/P03 Web debug-playable slice will be added.
+- The existing public T00 Site remains a visual reference through P03, not a current playable build.
+- P04 owns the first playable Web loop. Its accepted merged `main` revision must be deployed and
+  verified on the Site before the playable milestone is complete.
+- From P04 onward, every `main` merge affecting the playable Web path, player-visible
+  rules/content, or release assets must deploy that same revision.
+- Each deployed playable build records and displays its phase and source commit. A deployment
+  mismatch is `RELEASE_BLOCKED / OUT_OF_SYNC`; pure docs/evidence/CI/headless-only changes are
+  exempt from redeployment.
 
 ## Next executable task
 
