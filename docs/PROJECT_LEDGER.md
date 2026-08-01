@@ -1,24 +1,24 @@
 # Project Ledger
 
-> Updated: 2026-08-01
+> Updated: 2026-08-02
 
 ## Current stage
 
-| Item                         | Status                                                |
-| ---------------------------- | ----------------------------------------------------- |
-| P00                          | Complete                                              |
-| P01                          | Complete                                              |
-| P02-000                      | Complete; gameplay baseline Owner-approved 2026-08-01 |
-| P02 development plan         | v1.1 Owner-approved 2026-08-01                        |
-| P01-M1                       | Merged through PR #7; Gate #8 passed                  |
-| P02-001                      | IMPLEMENTING: ADRs and Legacy/V2 scaffold only        |
-| P02 gameplay implementation  | Not started                                           |
-| Current main                 | `5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`            |
-| Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`            |
-| Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`            |
-| Engine version               | `0.1.2-p01-r2`                                        |
-| Current decision             | Execute P02-001 without starting P02 gameplay         |
-| Current implementation Issue | GitHub #9 (`P02-001 architecture scaffold`)           |
+| Item                         | Status                                                    |
+| ---------------------------- | --------------------------------------------------------- |
+| P00                          | Complete                                                  |
+| P01                          | Complete                                                  |
+| P02-000                      | Complete; v1.2 roster amendment Owner-approved 2026-08-02 |
+| P02 development plan         | v1.2 Owner-approved 2026-08-02                            |
+| P01-M1                       | Merged through PR #7; Gate #8 passed                      |
+| P02-001                      | Merged through PR #10                                     |
+| P02 gameplay implementation  | Not started                                               |
+| Current main                 | `5eb947f81fe2600c3cd710999e1acc4d4718c63b`                |
+| Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`                |
+| Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`                |
+| Engine version               | `0.1.2-p01-r2`                                            |
+| Current decision             | Apply the 12-player baseline amendment before P02-002     |
+| Current implementation Issue | GitHub #11 (`P02-002`, READY / NOT STARTED)               |
 
 ## Frozen baseline
 
@@ -53,28 +53,28 @@ These engineering guarantees are not reopened by gameplay design.
 
 ## Approved P02-000 decision
 
-The Owner-approved `docs/P02_GAMEPLAY_BASELINE.md` v1.1 is the gameplay authority:
+The Owner-approved `docs/P02_GAMEPLAY_BASELINE.md` v1.2 is the gameplay authority:
 
 - one team plan and one match slot coexist in every operation week;
 - exam/wrap weeks have no player activity;
 - P02 uses ten abilities, fatigue, and individual chemistry aggregated from the current lineup;
+- P02 uses exactly 12 active players; the formal/friendly roster is the entire team, while lineup
+  order, starters, duties, tactics, and rotation remain player decisions;
 - official, friendly, and scrimmage records are isolated;
 - Model B is an incremental quarter/possession-chain session with keyed local randomness;
 - full-coach substitutions are manual, instant simulation uses a deterministic assistant policy;
 - cards, production match UI, recruitment, full competitions, deeper content, LLM, and Agent work
   remain in later phases.
 
-The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.1 is also Owner-approved. It defines architecture,
+The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.2 is also Owner-approved. It defines architecture,
 migration, test, Issue/PR, Gate, and rollback details without changing the gameplay authority.
 
 ## Next executable task
 
-1. Complete P02-001 on `task/p02-001-architecture-scaffold` from
-   `main@5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`.
-2. Form a stable candidate, pass CI, and obtain an independent read-only audit for that exact SHA.
-3. Await Owner confirmation before merge.
-4. Do not create or start P02-002 before P02-001 merges.
+1. Merge the Owner-approved 12-player documentation amendment without changing Legacy P01 output.
+2. Keep P02-002 Issue #11 in `READY / NOT STARTED` until the amendment is merged.
+3. Start P02-002 only from the amended `main`, using the existing Issue/PR/Gate flow.
 
-No P02 gameplay code, public match contract, V2 Schema, or balancing fixture is authorized before
-P01-M1 passes its Gate and merges. Downstream Issues are created progressively, not as prebuilt
-empty shells.
+No P02 gameplay code, public match contract, V2 Schema, or balancing fixture has started. Legacy
+P01 remains an unchanged 22-player regression fixture; P02 implementation must use the 12-player
+rule. Downstream Issues are created progressively, not as prebuilt empty shells.

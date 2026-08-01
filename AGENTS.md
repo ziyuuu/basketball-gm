@@ -16,8 +16,9 @@
 - The first playable proof is a no-UI, no-API, three-school-year simulation.
 - P00/P01 engineering integrity is frozen at `main@6547fbf51b2a440fd9602eed82c869d70b1181e1`.
 - P01 attributes, training values, budget values, reputation values, automatic roster selection, and match model A are gameplay placeholders, not frozen design.
-- The Owner-approved P02 gameplay authority is `docs/P02_GAMEPLAY_BASELINE.md` v1.1. Do not reinterpret it from the superseded vision or audit drafts.
-- The Owner-approved implementation authority is `docs/P02_DEVELOPMENT_PLAN.md` v1.1. Implement it through one unblocked GitHub Issue and one independently reviewable PR at a time, beginning with P01-M1.
+- The Owner-approved P02 gameplay authority is `docs/P02_GAMEPLAY_BASELINE.md` v1.2. Do not reinterpret it from the superseded vision or audit drafts.
+- The Owner-approved implementation authority is `docs/P02_DEVELOPMENT_PLAN.md` v1.2. Implement it through one unblocked GitHub Issue and one independently reviewable PR at a time.
+- P02 has exactly 12 active players; its initial fixed fixture is 12 first-year players, and the formal/friendly match roster is the whole active team. Any 22-player value under Legacy P01 code or P00/P01 evidence is historical regression data, not a current product rule.
 - P02 targets one simplified quarter/possession-chain match model. Model A remains an engineering regression baseline; model C is not an MVP implementation requirement.
 - P02 uses ten trainable abilities, a static body proxy, six fixed tendencies, at most one single-level archetype trait, fatigue, and individual chemistry. Morale, focus, pressure, injuries, pair relationships, and fixed five-player chemistry are not P02 state.
 - Values marked `[CALIBRATE]` may change only through the approved directional-scenario process. Calibration may not change the mechanic, phase boundary, record scope, or deferred-content decision.

@@ -4,7 +4,8 @@
 > Status: `COMPLETE / OWNER_APPROVED`
 > Owner approval: 2026-08-01
 > Formal deliverable: `docs/P02_GAMEPLAY_BASELINE.md`
-> Implementation: governed by Owner-approved `docs/P02_DEVELOPMENT_PLAN.md` v1.1; begins with P01-M1
+> Roster amendment: 2026-08-02; P02 uses exactly 12 active players
+> Implementation: governed by Owner-approved `docs/P02_DEVELOPMENT_PLAN.md` v1.2
 
 ## Purpose
 
@@ -30,8 +31,7 @@ micromanagement or a full professional-club economy.
 2. Which player attributes, positions, roles, skills, and condition dimensions are necessary at
    MVP depth?
 3. How do training and recovery create meaningful growth-versus-readiness trade-offs?
-4. How does an approximately 22-player team become a 12-player match roster, starters, bench, and
-   rotation?
+4. How does a 12-player team become five starters, seven substitutes, duties, and a rotation?
 5. What minimum budget and reputation rules create decisions without becoming a separate economy
    game?
 6. What does the player decide before and during a match?

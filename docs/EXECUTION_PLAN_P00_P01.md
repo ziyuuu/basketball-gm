@@ -126,9 +126,9 @@ P02-000 is complete and Owner-approved at `docs/P02_GAMEPLAY_BASELINE.md`. It co
 management placeholders and P02 match gameplay as one MVP rules slice. Parallel A/B/C research is
 removed from the MVP path; model A stays as a Legacy regression reference and model C is deferred.
 
-No P02 gameplay implementation has started. `docs/P02_DEVELOPMENT_PLAN.md` v1.1 is now
-Owner-approved; Issue-driven implementation begins with P01-M1 annual-grant integrity hardening
-and only then P02-001 architecture ADRs.
+P01-M1 and P02-001 have merged. `docs/P02_GAMEPLAY_BASELINE.md` and
+`docs/P02_DEVELOPMENT_PLAN.md` are now v1.2 after the Owner changed the P02 team size from about
+22 active players to exactly 12. P02-002 remains ready but not started.
 
 See `PROJECT_LEDGER.md`, `P01_P02_GAMEPLAY_BASELINE_BRIEF.md`,
 `P02_GAMEPLAY_BASELINE.md`, and `P02_DEVELOPMENT_PLAN.md`.

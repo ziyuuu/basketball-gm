@@ -9,7 +9,7 @@
 | Setting     | Chinese ordinary high-school girls' basketball team                                                             |
 | Lifecycle   | Players have three high-school grades; school/team assets survive cohort turnover                               |
 | Calendar    | Two terms per year; 20 weeks per term; 16 operation weeks plus 4 exam/wrap weeks                                |
-| Roster      | About 22 active players; formal tournament roster is 12 and later becomes lockable                              |
+| Roster      | Exactly 12 active players; the formal/friendly match roster is the whole team                                   |
 | Saves       | Manual saves, reloads, multiple slots, and rollback are allowed                                                 |
 | Simulation  | Fast result, text presentation, and any future 2D replay must consume the same structured result                |
 | LLM         | Optional future enhancement; the non-LLM game must be complete                                                  |
@@ -61,7 +61,8 @@
 
 ## Approved P01/P02 gameplay baseline scope
 
-The Owner approved `docs/P02_GAMEPLAY_BASELINE.md` v1.1 on 2026-08-01. P01's engineering
+The Owner approved `docs/P02_GAMEPLAY_BASELINE.md` v1.1 on 2026-08-01 and amended the roster rule
+through v1.2 on 2026-08-02. P01's engineering
 guarantees remain frozen; its placeholder gameplay is replaced by this coherent P02 rules slice:
 
 - every operation week has one team plan and one match slot; exam/wrap weeks have no player
@@ -72,9 +73,9 @@ guarantees remain frozen; its placeholder gameplay is replaced by this coherent 
   single-level archetype trait, fatigue, and individual chemistry;
 - individual chemistry is aggregated from the current on-court players and duties; no pair or
   fixed five-player combination state;
-- about 22 active players into a 12-player formal/friendly roster, five starters, duties, position
-  fit, deterministic assistant rotation for instant simulation, and manual non-forced
-  substitutions in full-coach mode;
+- exactly 12 active players, all registered for formal/friendly matches, with five starters,
+  seven substitutes, duties, position fit, deterministic assistant rotation for instant
+  simulation, and manual non-forced substitutions in full-coach mode;
 - one minimum budget and team-reputation loop;
 - official, friendly, and scrimmage slots with strictly classified records;
 - match preparation, three tactic axes, one incremental quarter/possession-chain Model B, keyed
@@ -83,14 +84,12 @@ guarantees remain frozen; its placeholder gameplay is replaced by this coherent 
 - deterministic scenario checks for strength gaps, fatigue, position mismatch, tactical fit, and
   rotation depth.
 
-The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.1 is Owner-approved. Implementation is authorized
+The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.2 is Owner-approved. Implementation is authorized
 only through its dependency-ordered Issue/PR flow, beginning with the non-gameplay P01-M1
 integrity task; no later P02 slice may bypass that dependency.
 
-P01-M1 has now merged through PR #7 after Gate #8 passed. The only active follow-on slice is
-P02-001 (`task/p02-001-architecture-scaffold`): ADRs, Legacy P01 isolation, boundary enforcement,
-and implementation evidence. It does not authorize P02 gameplay, Match/V2 production contracts,
-or P02-002.
+P01-M1 merged through PR #7 after Gate #8 passed. P02-001 merged through PR #10. P02-002 exists as
+Issue #11 in `READY / NOT STARTED`; no P02-002 implementation branch or code has started.
 
 ## Approved P02 exclusions
 
