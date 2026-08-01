@@ -1,3 +1,3 @@
-import { resolveCurrentWeek } from '@sunny-court/domain/legacy-p01';
+import { fold as execute } from '@sunny-court/domain';
 
-void resolveCurrentWeek;
+execute({ revision: 0 });

@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@bridge": ["./packages/shared/src/bridge.mjs"]
+    }
+  }
+}

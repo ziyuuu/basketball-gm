@@ -21,14 +21,38 @@ XDG_DATA_HOME=/tmp/p02-001-xdg pnpm install --frozen-lockfile
 `pnpm check` passed with 8 test files / 29 tests, formatting, lint, TypeScript, boundaries, Web
 build, and CLI build all successful.
 
+## Owner-return boundary remediation
+
+Remote candidate `930fb44cf773934c8a0c1f2a0f801f8f600df053` was returned without merge after
+four false-negative fixtures exposed gaps in the boundary checker. Its CI run #24 and prior audit
+PASS are invalid for any later candidate.
+
+Before changing the checker, each isolated fixture below incorrectly exited 0:
+
+- `negative-core-imports-v2`;
+- `negative-v2-imports-legacy-root`;
+- `negative-match-imports-resolver`, using the unrelated resolver name `fold` and no Legacy import;
+- `negative-cli-resolver`, importing and calling `fold` through an alias.
+
+The remediation replaces function-name matching with TypeScript-AST import records, resolved
+workspace/package-import/TypeScript-path module edges, explicit Legacy compatibility-root
+classification, transitive Legacy/V2 reachability, an exact Match RNG-primitive + `match/**`
+allowed surface, and a fail-closed CLI read-only domain import list. Wildcard precedence,
+conditional and legacy package entrypoints, `baseUrl`, deep imports, out-of-graph/test bridges,
+Vite loaders/HTML entries, Node/CommonJS loaders, triple-slash references, and source-query suffixes
+are covered. The fixture suite now has one positive fixture and 38 negative fixtures. The four
+Owner-blocking cases plus approved-path, compatibility-wrapper, TypeScript alias,
+dynamic/non-static import, relative cross-package, and source-derived cycle cases have explicit
+assertions.
+
 ## Final checks
 
 ```bash
-XDG_DATA_HOME=/tmp/p02-001-xdg pnpm check
+pnpm check
 ```
 
 Passed: formatting, ESLint, TypeScript, boundary check, Web build, CLI build, and 10 test files /
-41 tests. The original 29 tests remain; P02-001 adds 12 scaffold/boundary tests.
+70 tests. The original 29 tests remain; P02-001 adds 41 scaffold/boundary tests.
 
 ```bash
 pnpm exec vitest run \
@@ -42,14 +66,17 @@ pnpm exec vitest run \
   tests/p02-001-legacy-subpaths.test.ts
 ```
 
-Passed: 8 test files / 37 tests. This includes P01-M1's 17 re-signed attack rejections, eight legal
+Passed: 8 test files / 66 tests. This includes P01-M1's 17 re-signed attack rejections, eight legal
 annual-grant boundaries, root/Legacy export identity, memory latest→backup equivalence, Node and
 IndexedDB persistence tests, and isolated boundary positive/negative fixtures.
 
 `pnpm boundaries` passed with 9 packages/apps and reports no package cycle, domain isolation, and
-Legacy/V2 boundary enforcement. The negative fixtures prove rejection of V2→Legacy,
-Legacy→V2, match→application/persistence, match→mutable resolver, Web import/dependency, CLI
-resolver, core→Legacy, and package-cycle violations.
+Legacy/V2 boundary enforcement. The negative fixtures prove rejection of direct and transitive
+V2→Legacy (including no-suffix roots and thin wrappers), Legacy→V2, core→Legacy/V2,
+match→application/persistence or mutable state, Web import/dependency, arbitrary-name CLI domain
+mutation imports, non-static imports, relative cross-package edges, and manifest- or source-derived
+package cycles. Package-import and TypeScript path aliases, wildcard precedence, conditional
+targets, `baseUrl`, and unmanifested internal targets are resolved or rejected fail-closed.
 
 Historical integrity checks passed:
 

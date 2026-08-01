@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@legacy-root": ["./packages/domain/src/index.ts"]
+    }
+  }
+}

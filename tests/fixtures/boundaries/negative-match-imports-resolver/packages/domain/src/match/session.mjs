@@ -1,3 +1,5 @@
-import { resolveCurrentWeek } from '../legacy-p01/time.mjs';
+import { fold as step } from '../state/fold.mjs';
 
-void resolveCurrentWeek;
+export function run(snapshot) {
+  return step(snapshot);
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/bridge",
+  "private": true,
+  "type": "module",
+  "main": "./src/legacy-p01/index.mjs"
+}

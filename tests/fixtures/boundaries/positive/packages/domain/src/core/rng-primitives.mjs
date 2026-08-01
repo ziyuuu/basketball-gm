@@ -1,1 +1,1 @@
-export const seedPrimitive = 'core-only';
+export const seedFromText = 'core-only';

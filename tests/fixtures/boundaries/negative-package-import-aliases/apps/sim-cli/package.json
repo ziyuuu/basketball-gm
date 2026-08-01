@@ -1,0 +1,12 @@
+{
+  "name": "@fixture/cli",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sunny-court/domain": "workspace:*"
+  },
+  "imports": {
+    "#domain": "@sunny-court/domain",
+    "#loader": "module"
+  }
+}

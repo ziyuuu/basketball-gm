@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/domain",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fixture/application": "workspace:*"
+  }
+}

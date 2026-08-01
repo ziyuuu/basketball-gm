@@ -1,3 +1,3 @@
-import { seedPrimitive } from '../core/rng-primitives.mjs';
+import { seedFromText } from '../core/rng-primitives.mjs';
 
-export const matchSeedPrimitive = seedPrimitive;
+export const matchSeedPrimitive = seedFromText;
