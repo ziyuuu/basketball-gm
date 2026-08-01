@@ -590,6 +590,14 @@ function extractImportRecords(source, file) {
         result.add('value:function');
       }
       if (
+        ['object:global', 'object:module', 'object:process', 'object:reflect'].includes(
+          capability,
+        ) &&
+        property === 'constructor'
+      ) {
+        result.add('value:function');
+      }
+      if (
         ['value:function', 'object:function-prototype'].includes(capability) &&
         property === 'constructor'
       ) {
@@ -736,11 +744,13 @@ function extractImportRecords(source, file) {
       if (dynamicLoaderSpecifiers.has(firstArgument)) result.add('object:module');
       if (['node:process', 'process'].includes(firstArgument)) result.add('object:process');
     }
-    if (
-      calledCapabilities.has('callable:get-prototype-of') &&
-      capabilitiesForExpression(invocation.arguments[0]).has('value:function')
-    ) {
-      result.add('object:function-prototype');
+    if (calledCapabilities.has('callable:get-prototype-of')) {
+      const targetCapabilities = capabilitiesForExpression(invocation.arguments[0]);
+      if ([...targetCapabilities].some(isInvokableCapability)) {
+        result.add('object:function-prototype');
+      } else if ([...targetCapabilities].some((capability) => capability.startsWith('object:'))) {
+        result.add('object:constructed-instance');
+      }
     }
     if (calledCapabilities.has('callable:reflect-get')) {
       const targetCapabilities = capabilitiesForExpression(invocation.arguments[0]);

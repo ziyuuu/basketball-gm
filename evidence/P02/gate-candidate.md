@@ -22,5 +22,10 @@ Candidate `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb` is also superseded: adversa
 capability loss through `new`, `Proxy`, dynamic code generation, property extraction, and callable
 forwarding. CI run #28 and every review tied to that SHA are historical only.
 
+Candidate `001c8166986f769930b2a914a50311bbd8acc99f` is also superseded: fresh detached audit
+found that runtime-object constructor chains could erase dynamic-code capability and reach a state
+resolver. CI run #30 and every review tied to that SHA are historical only. The next candidate is
+formed as a normal descendant of that remote head and still requires fresh exact-SHA CI and audit.
+
 This is implementation-thread evidence for P02-001. It is not Gate B, Gate C, Gate D, or a P02
 completion decision. P02 gameplay, Match/V2 production contracts, and P02-002 remain unstarted.

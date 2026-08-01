@@ -5,9 +5,10 @@
 - Owner-rejected candidate: `930fb44cf773934c8a0c1f2a0f801f8f600df053`
 - Fresh-audit-rejected candidate: `584143b97270275eefd8159b13639bbb90c2898d`
 - Adversarial-review-rejected candidate: `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb`
+- Fresh-audit-rejected candidate: `001c8166986f769930b2a914a50311bbd8acc99f`
 - Parent main: `5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`
-- Disposition: all three candidates were rejected and not merged
-- Consequence: CI runs #24/#26/#28 and every audit tied to those SHAs are invalid for merge
+- Disposition: all four candidates were rejected and not merged
+- Consequence: CI runs #24/#26/#28/#30 and every audit tied to those SHAs are invalid for merge
   authorization
 
 ## Pre-fix reproduction
@@ -45,6 +46,12 @@ Examples included `new Proxy(module.require.bind(null), {})`, `eval`, `Function`
 `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb` and CI run #28 were therefore invalidated before
 merge authorization.
 
+Candidate `001c8166986f769930b2a914a50311bbd8acc99f` still allowed a dynamic-code loader through
+`globalThis.constructor.constructor` and `process.constructor.constructor`; the same capability
+loss was reproducible through `module`, `Reflect`, and `Object.getPrototypeOf(Reflect)` constructor
+chains. The fresh detached audit obtained exit 0 while Node executed an arbitrary-name state
+resolver, so CI run #30 and that audit are invalid for merge authorization.
+
 ## Remediation design
 
 - TypeScript AST extraction covers static imports/re-exports, import-equals, import types, dynamic
@@ -60,6 +67,10 @@ merge authorization.
 - Ambient `eval`, `Function`, `globalThis` aliases, derived Function constructors, and their
   call/apply/bind/new forms are rejected in production source before generated code can hide a
   protected import. Symbol identity preserves legitimate local shadows and injected functions.
+- Known runtime objects (`globalThis`, `module`, `process`, and `Reflect`) now propagate a function
+  capability through their first static `constructor` access. `Object.getPrototypeOf` preserves
+  either function-prototype or constructed-object capability, so a second constructor access cannot
+  erase the dynamic-code path. Ordinary instance constructors remain non-codegen positive cases.
 - Relative, workspace-package, `package.json#imports`, `tsconfig.paths`, and `baseUrl` specifiers
   resolve to real source targets, including `.js` to `.ts` mapping and wildcard specificity.
   Conditional package targets and matched-but-unresolved TypeScript aliases fail closed.
@@ -86,7 +97,7 @@ merge authorization.
 
 ## Independent negative proof
 
-`tests/p02-001-boundaries.test.ts` now runs two positive and 98 negative fixture roots. The four
+`tests/p02-001-boundaries.test.ts` now runs two positive and 103 negative fixture roots. The four
 Owner-blocking cases, no-suffix root, compatibility-wrapper reachability, approved
 `operation-week-session` path, TypeScript path/baseUrl aliases, an unmanifested alias target,
 dynamic import, and non-static import cases require exit 1 and independently assert their intended
@@ -95,12 +106,15 @@ aliases and conditions, relative Match/Web edges, a source-derived package cycle
 loader escape, `new`/`Proxy` forwarding, dynamic code generation, property extraction, container
 members, function returns, and call/apply/bind/Reflect forwarding. Separate positive cases prove
 locally injected loader-like names and ordinary nested/custom constructors remain legal.
+The five runtime-constructor-chain fixtures each exit 1 with exactly the dynamic-code diagnostic;
+their runtime forms cover `globalThis`, `process`, `module`, `Reflect`, and
+`Object.getPrototypeOf(Reflect)` without relying on a resolver name.
 
 After remediation:
 
-- focused boundary suite: 100/100 passed;
-- full `pnpm check`: 10 files / 131 tests passed, including Web and CLI builds;
-- directed regression: 8 files / 127 tests passed;
+- focused boundary suite: 105/105 passed;
+- full `pnpm check`: 10 files / 136 tests passed, including Web and CLI builds;
+- directed regression: 8 files / 132 tests passed;
 - both frozen state/replay hash pairs remained unchanged;
 - 1,000/1,000 batch runs completed with every failure/mismatch/violation count at zero;
 - P00/P01/P01-M1 evidence trees and manifest file hashes remained unchanged.

@@ -210,6 +210,26 @@ describe('P02-001 boundary checker fixtures', () => {
       'Dynamic code execution is forbidden in production source',
     ],
     [
+      'negative-codegen-globalthis-constructor-chain',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-process-constructor-chain',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-module-constructor-chain',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-reflect-constructor-chain',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
+      'negative-codegen-runtime-prototype-constructor-chain',
+      'Dynamic code execution is forbidden in production source',
+    ],
+    [
       'negative-codegen-array-copywithin-constructor',
       'Dynamic code execution is forbidden in production source',
     ],

@@ -4,6 +4,8 @@
   at `5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`.
 - After merge: create a normal revert PR. Do not reset, force-push, rewrite history, delete remote
   data, or alter historical evidence.
+- The runtime-constructor-chain remediation changes only the boundary checker, isolated fixtures,
+  tests, and current P02 evidence; it has no gameplay, save, or persistence migration consequence.
 - A revert restores the pre-P02-001 P01 root layout/exports while preserving P01-M1 integrity
   fixes. It must pass `pnpm check`, the two frozen golden pairs, the P01-M1 attack/boundary matrix,
   and existing Node/IndexedDB persistence contracts.

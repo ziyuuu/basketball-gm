@@ -20,8 +20,8 @@
   bundle Schema, call counts, and sequential behavior stay in Legacy.
 - Boundary checks with symbol-aware TypeScript-AST import extraction, loader capability/escape
   and dynamic-code analysis, package/TypeScript alias resolution, resolved module/package graphs,
-  transitive Legacy/V2 reachability, two positive fixtures, and 98 demonstrably failing negative
-  fixtures.
+  transitive Legacy/V2 reachability, runtime-object constructor-chain propagation, two positive
+  fixtures, and 103 demonstrably failing negative fixtures.
 - P01 root/Legacy identity and persistence-contract regression coverage.
 - P02 implementation evidence and independent P02 manifest support.
 
