@@ -36,4 +36,8 @@
 - Use task branches named `task/pXX-NNN-*` and remediation branches named `fix/pXX-NNN-*`.
 - Keep exact local/private experiment payloads under ignored `artifacts/local/**`; commit schemas, rubrics, summaries, and Gate evidence only.
 - Every phase must update its scope snapshot, traceability table, test/simulation report, known issues, rollback plan, and SHA-256 manifest.
+- P00-P03 headless or engineering-only merges do not redeploy the visual-reference Site. P04 owns the first playable Web release.
+- The first accepted P04 playable loop is not release-complete until its exact merged `main` revision is deployed to the public Site and the deployment is verified.
+- From P04 onward, every `main` merge that changes the playable Web path, player-visible rules/content, or release assets must deploy that same revision to the Site. Pure docs, evidence, CI, and headless-only changes do not require a new Site version.
+- The deployed build must display its phase and source commit. If deployment fails or points at another revision, mark the playable release blocked/out of sync; do not present the older Site as current.
 - A failing CI check is a blocker, not a deferred cleanup item.
