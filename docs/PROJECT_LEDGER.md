@@ -1,18 +1,22 @@
 # Project Ledger
 
-> Updated: 2026-07-31
+> Updated: 2026-08-01
 
 ## Current stage
 
-| Item                         | Status                                     |
-| ---------------------------- | ------------------------------------------ |
-| P00                          | Complete                                   |
-| P01                          | Complete                                   |
-| P02                          | Ready; gameplay design not started         |
-| Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1` |
-| Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` |
-| Engine version               | `0.1.2-p01-r2`                             |
-| Next task                    | `P02-000 P01/P02 gameplay design baseline` |
+| Item                              | Status                                                  |
+| --------------------------------- | ------------------------------------------------------- |
+| P00                               | Complete                                                |
+| P01                               | Complete                                                |
+| P02-000                           | Complete; gameplay baseline Owner-approved 2026-08-01   |
+| P02 development plan              | v1.1 Owner-approved 2026-08-01                          |
+| P02 implementation                | Not started                                             |
+| P02-000 source documentation main | `2bdb373dfa7cf690be36a87871d447f4ebe7daf4`              |
+| Frozen P00/P01 code baseline      | `6547fbf51b2a440fd9602eed82c869d70b1181e1`              |
+| Accepted R2 candidate             | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`              |
+| Engine version                    | `0.1.2-p01-r2`                                          |
+| Current decision                  | Execute `P01-M1` through the first implementation Issue |
+| First authorized implementation   | `P01-M1 annual-grant integrity hardening`               |
 
 ## Frozen baseline
 
@@ -47,21 +51,29 @@ These engineering guarantees are not reopened by gameplay design.
   Do not invent either.
 - P01 gameplay values and model A are engineering fixtures, not fun or balance evidence.
 
-## Current decision
+## Approved P02-000 decision
 
-The next stage combines the gameplay content already sketched for engineering purposes in P01 with
-the match gameplay required by P02. The result is one coherent MVP rules slice, not a research
-program comparing three match models.
+The Owner-approved `docs/P02_GAMEPLAY_BASELINE.md` v1.1 is the gameplay authority:
 
-- Design the P01/P02 gameplay baseline before implementing new rules.
-- Use one simplified quarter/possession-chain match model after the design is approved.
-- Keep model A only as an engineering regression reference.
-- Remove model C from the MVP implementation path.
-- Use a small set of deterministic gameplay scenarios instead of a large A/B/C experiment.
-- Keep recruitment generation and roster sustainability in P03.
+- one team plan and one match slot coexist in every operation week;
+- exam/wrap weeks have no player activity;
+- P02 uses ten abilities, fatigue, and individual chemistry aggregated from the current lineup;
+- official, friendly, and scrimmage records are isolated;
+- Model B is an incremental quarter/possession-chain session with keyed local randomness;
+- full-coach substitutions are manual, instant simulation uses a deterministic assistant policy;
+- cards, production match UI, recruitment, full competitions, deeper content, LLM, and Agent work
+  remain in later phases.
+
+The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.1 is also Owner-approved. It defines architecture,
+migration, test, Issue/PR, Gate, and rollback details without changing the gameplay authority.
 
 ## Next executable task
 
-`P02-000` is design-only. Its authority and required output are defined in
-`P01_P02_GAMEPLAY_BASELINE_BRIEF.md`. No gameplay code, public match contract, or balancing fixture
-should be frozen before the owner approves that baseline.
+1. Create the P02 roadmap tracker and the single executable P01-M1 Issue.
+2. Implement P01-M1 on `fix/p01-m1-annual-grant-integrity` and form a stable candidate SHA.
+3. Run independent Gate M1; after `PASS` and Owner confirmation, merge its PR.
+4. Only then create P02-001 from the resulting `main` SHA.
+
+No P02 gameplay code, public match contract, V2 Schema, or balancing fixture is authorized before
+P01-M1 passes its Gate and merges. Downstream Issues are created progressively, not as prebuilt
+empty shells.

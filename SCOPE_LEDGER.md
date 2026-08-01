@@ -59,44 +59,58 @@
 - Fun or balance claims.
 - Any LLM/Agent behavior.
 
-## Current P01/P02 gameplay baseline scope
+## Approved P01/P02 gameplay baseline scope
 
-P01's engineering guarantees remain frozen. Its placeholder gameplay and P02's match gameplay are
-now designed together as one coherent MVP rules slice:
+The Owner approved `docs/P02_GAMEPLAY_BASELINE.md` v1.1 on 2026-08-01. P01's engineering
+guarantees remain frozen; its placeholder gameplay is replaced by this coherent P02 rules slice:
 
-- weekly player decision loop and action budget;
-- player attributes, positions, roles, skills, fatigue, morale, focus, and pressure at MVP depth;
-- training and recovery choices, growth, costs, and trade-offs;
-- active roster of about 22 players into a 12-player match roster, starters, bench, rotation, and
-  position fit;
-- minimum budget and reputation loops only where they change current decisions;
-- match preparation, tactics, one simplified quarter/possession-chain model, settlement, and
-  explainable post-match feedback;
-- grade progression, graduation, archives, and their feedback to the player;
-- a small set of deterministic scenario checks for strength gaps, fatigue, position mismatch,
-  tactical fit, and rotation depth.
+- every operation week has one team plan and one match slot; exam/wrap weeks have no player
+  activity;
+- standard/concentrated training, recovery, two minimum team activities, zero to three individual
+  specializations, growth, costs, and readiness trade-offs;
+- ten trainable abilities, one static body proxy, six fixed behavior tendencies, at most one
+  single-level archetype trait, fatigue, and individual chemistry;
+- individual chemistry is aggregated from the current on-court players and duties; no pair or
+  fixed five-player combination state;
+- about 22 active players into a 12-player formal/friendly roster, five starters, duties, position
+  fit, deterministic assistant rotation for instant simulation, and manual non-forced
+  substitutions in full-coach mode;
+- one minimum budget and team-reputation loop;
+- official, friendly, and scrimmage slots with strictly classified records;
+- match preparation, three tactic axes, one incremental quarter/possession-chain Model B, keyed
+  local randomness, settlement, and fact-based feedback;
+- grade progression, graduation, and minimum archive data;
+- deterministic scenario checks for strength gaps, fatigue, position mismatch, tactical fit, and
+  rotation depth.
 
-The baseline is a design deliverable first. It must be approved before gameplay implementation,
-public match contracts, or balancing fixtures are frozen.
+The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.1 is Owner-approved. Implementation is authorized
+only through its dependency-ordered Issue/PR flow, beginning with the non-gameplay P01-M1
+integrity task; no later P02 slice may bypass that dependency.
 
-## Current P01/P02 gameplay baseline exclusions
+## Approved P02 exclusions
 
-- parallel A/B/C model research or a production model-C spike;
+- complete card/deck/energy/hero/pause systems or production real-time card UI;
+- 29 active attributes, complete tendency training, multilevel badges, morale, focus, pressure,
+  injuries, and relationship matrices;
 - formal recruitment generation, annual candidate probabilities, and sustainable roster renewal;
-- complete tournament formats, detailed events, facilities, staff, tradition, or school operations;
-- production UI, final art/content, full-year or three-year balance claims;
+- complete friendly network, league/cup/national formats, detailed events, facilities, staff,
+  tradition, or complex school operations;
+- production match UI, five-minute playback, key moments, 2D court, drag interaction, final
+  art/content, or one-year/three-year balance claims;
+- parallel A/B/C research or a production Model C spike;
 - LLM dialogue, Agent behavior, or model-provider integration.
 
 ## Deferred decisions
 
-| Decision                                                 | Earliest Gate              |
-| -------------------------------------------------------- | -------------------------- |
-| MVP match model and core gameplay attributes             | P01/P02 gameplay baseline  |
-| Annual candidate composition and roster sustainability   | P03                        |
-| Production information architecture and UI state library | P04                        |
-| Phaser/Canvas presentation value                         | P05                        |
-| Full one-year balance                                    | P06                        |
-| Complete three-year MVP balance                          | P07                        |
-| Model-C research, if later evidence justifies it         | Post-MVP research decision |
-| LLM dialogue                                             | P10                        |
-| Agent runtime                                            | P11                        |
+| Decision                                                                      | Earliest Gate              |
+| ----------------------------------------------------------------------------- | -------------------------- |
+| Annual candidate composition and roster sustainability                        | P03                        |
+| Card-playability prototype and production UI-state/IA choice                  | P04                        |
+| Whether cards enter the formal match experience; 2D value                     | P05                        |
+| Full competition/operations, one-year balance, and injury evaluation          | P06                        |
+| Complete three-year MVP balance and archive UI                                | P07                        |
+| 29-attribute need, morale/focus/pressure need, tendencies, badges, statistics | P08                        |
+| Breakthrough, 5★/6★, hall of fame, tradition, and inheritance                 | P09                        |
+| Model-C research, if later evidence justifies it                              | Post-MVP research decision |
+| LLM dialogue                                                                  | P10                        |
+| Agent runtime                                                                 | P11                        |

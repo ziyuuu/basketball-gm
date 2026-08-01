@@ -122,12 +122,16 @@ second identity. Key phase promotion still requires independent evidence plus ow
 
 ## Next phase
 
-P02 is authorized to begin with `P02-000`, a design-only P01/P02 gameplay baseline. It covers the
-P01 management placeholders and P02 match gameplay as one MVP rules slice. Parallel A/B/C research
-is removed from the MVP path; model B is implemented only after the baseline is approved, model A
-stays as a regression reference, and model C is deferred.
+P02-000 is complete and Owner-approved at `docs/P02_GAMEPLAY_BASELINE.md`. It covers the P01
+management placeholders and P02 match gameplay as one MVP rules slice. Parallel A/B/C research is
+removed from the MVP path; model A stays as a Legacy regression reference and model C is deferred.
 
-See `PROJECT_LEDGER.md` and `P01_P02_GAMEPLAY_BASELINE_BRIEF.md`.
+No P02 gameplay implementation has started. `docs/P02_DEVELOPMENT_PLAN.md` v1.1 is now
+Owner-approved; Issue-driven implementation begins with P01-M1 annual-grant integrity hardening
+and only then P02-001 architecture ADRs.
+
+See `PROJECT_LEDGER.md`, `P01_P02_GAMEPLAY_BASELINE_BRIEF.md`,
+`P02_GAMEPLAY_BASELINE.md`, and `P02_DEVELOPMENT_PLAN.md`.
 
 ## Rollback
 
