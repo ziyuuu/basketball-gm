@@ -29,6 +29,17 @@ flowchart TD
 
 `packages/domain` is the innermost package. It has no DOM, React, IndexedDB, Node, persistence-adapter, network, or model dependency.
 
+## P02-001 compatibility scaffold
+
+P01 remains the current production behavior. Its five package surfaces are available through
+explicit `legacy-p01` subpaths, while the unqualified roots remain thin P01 re-exports until the
+separate P02-008B cutover. The only shared domain-core code introduced in P02-001 is a stateless
+RNG seed/state primitive; it has no P01 stream names, Schema, GameState, or reverse Legacy import.
+
+No V2 state, MatchSession, storage namespace, Web dependency, or CLI default path is introduced
+by this scaffold. The P01 Node latest/backup contract and the IndexedDB default database name
+`sunny-court-manager-saves` remain unchanged.
+
 ## State-change path
 
 ```text

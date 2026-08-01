@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/bridge",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "node": "./src/legacy-p01/index.mjs",
+      "default": "./src/safe.mjs"
+    }
+  }
+}

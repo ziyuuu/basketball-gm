@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/domain",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./core": "./src/core/rng-primitives.mjs",
+    "./v2": "./src/game/state-v2.mjs"
+  }
+}

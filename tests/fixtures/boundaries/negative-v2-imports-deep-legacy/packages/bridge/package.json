@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/bridge",
+  "private": true,
+  "type": "module"
+}

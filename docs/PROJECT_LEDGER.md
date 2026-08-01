@@ -10,14 +10,15 @@
 | P01                          | Complete                                              |
 | P02-000                      | Complete; gameplay baseline Owner-approved 2026-08-01 |
 | P02 development plan         | v1.1 Owner-approved 2026-08-01                        |
-| P01-M1                       | Implementation candidate; independent Gate pending    |
-| P02 implementation           | Not started                                           |
-| Approved docs merge on main  | `af5dcd1239a85f601c911629d7a12c9f4cdb170b`            |
+| P01-M1                       | Merged through PR #7; Gate #8 passed                  |
+| P02-001                      | IMPLEMENTING: ADRs and Legacy/V2 scaffold only        |
+| P02 gameplay implementation  | Not started                                           |
+| Current main                 | `5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`            |
 | Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`            |
 | Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`            |
 | Engine version               | `0.1.2-p01-r2`                                        |
-| Current decision             | Review P01-M1 candidate through independent Gate M1   |
-| Current implementation Issue | GitHub #6 (`P01-M1 annual-grant integrity hardening`) |
+| Current decision             | Execute P02-001 without starting P02 gameplay         |
+| Current implementation Issue | GitHub #9 (`P02-001 architecture scaffold`)           |
 
 ## Frozen baseline
 
@@ -44,8 +45,8 @@ These engineering guarantees are not reopened by gameplay design.
 
 ## Open risks
 
-- The crafted annual-grant save risk has an implementation candidate and implementation evidence,
-  but it remains open until independent Gate M1 passes and the Owner confirms the merge.
+- P01-M1 closed the crafted annual-grant save integrity gap without changing legal P01 outputs;
+  its 17 re-signed attacks and 8 legal boundaries remain required Legacy regressions.
 - The independent R2 decision has no standalone report or GitHub Review record in the repository.
   Do not invent either.
 - P01 gameplay values and model A are engineering fixtures, not fun or balance evidence.
@@ -68,10 +69,11 @@ migration, test, Issue/PR, Gate, and rollback details without changing the gamep
 
 ## Next executable task
 
-1. Publish the stable P01-M1 candidate PR from `fix/p01-m1-annual-grant-integrity`.
-2. Create and run independent Gate M1 against that exact candidate SHA.
-3. After `PASS` and Owner confirmation, merge its PR.
-4. Only then create P02-001 from the resulting `main` SHA.
+1. Complete P02-001 on `task/p02-001-architecture-scaffold` from
+   `main@5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`.
+2. Form a stable candidate, pass CI, and obtain an independent read-only audit for that exact SHA.
+3. Await Owner confirmation before merge.
+4. Do not create or start P02-002 before P02-001 merges.
 
 No P02 gameplay code, public match contract, V2 Schema, or balancing fixture is authorized before
 P01-M1 passes its Gate and merges. Downstream Issues are created progressively, not as prebuilt

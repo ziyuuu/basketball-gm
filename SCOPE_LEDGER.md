@@ -87,6 +87,11 @@ The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.1 is Owner-approved. Implementati
 only through its dependency-ordered Issue/PR flow, beginning with the non-gameplay P01-M1
 integrity task; no later P02 slice may bypass that dependency.
 
+P01-M1 has now merged through PR #7 after Gate #8 passed. The only active follow-on slice is
+P02-001 (`task/p02-001-architecture-scaffold`): ADRs, Legacy P01 isolation, boundary enforcement,
+and implementation evidence. It does not authorize P02 gameplay, Match/V2 production contracts,
+or P02-002.
+
 ## Approved P02 exclusions
 
 - complete card/deck/energy/hero/pause systems or production real-time card UI;

@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@domain-alias": ["./packages/domain/src/index.ts"]
+    }
+  }
+}

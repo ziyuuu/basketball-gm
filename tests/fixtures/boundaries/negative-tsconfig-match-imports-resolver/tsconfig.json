@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@state": ["./packages/domain/src/state/fold.mjs"]
+    }
+  }
+}

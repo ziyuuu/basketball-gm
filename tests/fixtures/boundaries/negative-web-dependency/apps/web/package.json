@@ -1,0 +1,8 @@
+{
+  "name": "@sunny-court/web",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sunny-court/domain": "workspace:*"
+  }
+}
