@@ -1,4 +1,9 @@
-import { OPERATION_WEEKS_PER_TERM, SCHOOL_YEARS_PER_RUN, WEEKS_PER_TERM } from './constants.js';
+import {
+  OPERATION_WEEKS_PER_TERM,
+  P01_ANNUAL_GRANT,
+  SCHOOL_YEARS_PER_RUN,
+  WEEKS_PER_TERM,
+} from './constants.js';
 import { DomainRuleError } from './errors.js';
 import { simulateModelAMatch } from './model-a.js';
 import type { DeterministicRng } from './rng.js';
@@ -197,7 +202,7 @@ function settleSchoolYear(state: GameState, week: Week, events: DomainEvent[]): 
 
   state.metrics.completedSchoolYears += 1;
   state.team.history.schoolYearsCompleted += 1;
-  appendBudgetEntry(state, state.budget.annualGrant, 'ANNUAL_GRANT', week);
+  appendBudgetEntry(state, P01_ANNUAL_GRANT, 'ANNUAL_GRANT', week);
   appendEvent(state, week, events, 'SCHOOL_YEAR_COMPLETED', {
     schoolYearIndex: week.schoolYearIndex,
     activePlayers: state.team.activePlayerIds.length,

@@ -15,7 +15,17 @@ async function collectFiles(directory) {
   return files;
 }
 
-for (const phase of ['P00', 'P01']) {
+const allowedPhases = new Set(['P00', 'P01', 'P01-M1']);
+const phaseFlagIndex = process.argv.indexOf('--phase');
+const requestedPhase = phaseFlagIndex >= 0 ? process.argv[phaseFlagIndex + 1] : undefined;
+if (phaseFlagIndex >= 0 && (!requestedPhase || !allowedPhases.has(requestedPhase))) {
+  throw new Error(
+    `--phase must be followed by one of ${[...allowedPhases].join(', ')}; received ${requestedPhase ?? '<missing>'}.`,
+  );
+}
+const phases = requestedPhase ? [requestedPhase] : ['P00', 'P01'];
+
+for (const phase of phases) {
   const directory = join(repositoryRoot, 'evidence', phase);
   const files = (await collectFiles(directory)).sort();
   const lines = [];

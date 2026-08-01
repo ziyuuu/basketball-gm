@@ -1,4 +1,10 @@
-import { CONTENT_PACK_HASHES, ENGINE_VERSION, SAVE_SCHEMA_VERSION } from './constants.js';
+import {
+  CONTENT_PACK_HASHES,
+  ENGINE_VERSION,
+  P01_ANNUAL_GRANT,
+  P01_INITIAL_GRANT,
+  SAVE_SCHEMA_VERSION,
+} from './constants.js';
 import { DeterministicRng } from './rng.js';
 import {
   GameStateSchema,
@@ -198,16 +204,16 @@ export function createInitialGame(options: CreateInitialGameOptions): InitialGam
     },
     budget: {
       id: 'budget-primary',
-      balance: 100_000,
-      annualGrant: 50_000,
+      balance: P01_INITIAL_GRANT,
+      annualGrant: P01_ANNUAL_GRANT,
       reserved: 0,
       ledger: [
         {
           sequence: 0,
           schoolYearIndex: 1,
           absoluteWeek: 0,
-          amount: 100_000,
-          balanceAfter: 100_000,
+          amount: P01_INITIAL_GRANT,
+          balanceAfter: P01_INITIAL_GRANT,
           reason: 'INITIAL_GRANT',
         },
       ],

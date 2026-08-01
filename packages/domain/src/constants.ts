@@ -12,6 +12,9 @@ export const CALENDAR_WEEKS_PER_RUN = TERMS_PER_SCHOOL_YEAR * WEEKS_PER_TERM * S
 export const OPERATION_WEEKS_PER_RUN =
   TERMS_PER_SCHOOL_YEAR * OPERATION_WEEKS_PER_TERM * SCHOOL_YEARS_PER_RUN;
 
+export const P01_INITIAL_GRANT = 100_000;
+export const P01_ANNUAL_GRANT = 50_000;
+
 export const RNG_STREAM_NAMES = [
   'recruitment',
   'generated-player',

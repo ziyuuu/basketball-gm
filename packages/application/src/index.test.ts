@@ -53,8 +53,7 @@ describe('application command transaction', () => {
       schoolName: '测试高中',
       managerName: '测试经理',
     });
-    initial.state.budget.balance = 0;
-    initial.state.budget.ledger.at(-1)!.balanceAfter = 0;
+    initial.state.budget.reserved = initial.state.budget.balance;
     const session = new GameSession({
       state: initial.state,
       rng: initial.rng,
