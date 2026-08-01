@@ -15,14 +15,15 @@ The T00 visual prototype is intentionally separate. This repository does not reu
 - P01-R2 candidate `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` passed the independent
   technical review used by this personal project and was merged through PR #1.
 - Engine version: `0.1.2-p01-r2`.
-- P02-000 gameplay baseline v1.1 was Owner-approved on 2026-08-01.
-- P02 development plan v1.1 was Owner-approved on 2026-08-01 after its conditional audit items
-  were incorporated.
+- P02-000 gameplay baseline v1.2 is Owner-approved; the 2026-08-02 amendment fixes the entire P02
+  team at 12 active players.
+- P02 development plan v1.2 is Owner-approved and carries the same 12-player rule.
 - P01-M1 annual-grant integrity hardening merged through PR #7 at
   `main@5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`; independent Gate #8 passed for its exact
   candidate before merge.
-- P02-001 is the current implementation slice. It freezes ADRs and establishes the Legacy P01/V2
-  scaffold only; no P02 gameplay, Match contract, or V2 production state is implemented yet.
+- P02-001 merged through PR #10 at `main@5eb947f81fe2600c3cd710999e1acc4d4718c63b`.
+- P02-002 exists as Issue #11 in `READY / NOT STARTED`; no P02 gameplay, Match contract, or V2
+  production state implementation has started yet.
 
 The history is intentionally not rewritten. Baseline `32861501...` failed P01 because of event-ID
 integrity. R1 `6984260...` repaired those IDs but still failed P01 because annual grants were
@@ -40,10 +41,14 @@ independent review.
 the P02 player model, Model B, three classified match types, atomic week settlement, and deferred
 systems.
 
-Implementation proceeds one dependency-cleared GitHub Issue and one PR at a time. P01-M1 is
-complete; P02-001 now establishes architecture ADRs and Legacy isolation. P02-008 remains split
-into an explicit V2 functional closure (`008A`) and a separate default-entry cutover (`008B`). The
-sequence does not jump directly to Model B or GameState V2.
+Implementation proceeds one dependency-cleared GitHub Issue and one PR at a time. P01-M1 and
+P02-001 are complete; P02-002 must start only after the 12-player v1.2 baseline amendment is on
+`main`. P02-008 remains split into an explicit V2 functional closure (`008A`) and a separate
+default-entry cutover (`008B`).
+
+Legacy P01 still contains its frozen 22-player regression fixture and historical save/evidence
+hashes. That value is not the current product rule and must not be carried into P02; P02 uses a
+12-player first-year fixed fixture and registers the whole team for formal/friendly matches.
 
 See [Project ledger](./docs/PROJECT_LEDGER.md),
 [approved P02 gameplay baseline](./docs/P02_GAMEPLAY_BASELINE.md), and
