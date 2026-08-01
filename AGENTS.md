@@ -16,8 +16,9 @@
 - The first playable proof is a no-UI, no-API, three-school-year simulation.
 - P00/P01 engineering integrity is frozen at `main@6547fbf51b2a440fd9602eed82c869d70b1181e1`.
 - P01 attributes, training values, budget values, reputation values, automatic roster selection, and match model A are gameplay placeholders, not frozen design.
-- The Owner-approved P02 gameplay authority is `docs/P02_GAMEPLAY_BASELINE.md` v1.1. Do not reinterpret it from the superseded vision or audit drafts.
-- The Owner-approved implementation authority is `docs/P02_DEVELOPMENT_PLAN.md` v1.1. Implement it through one unblocked GitHub Issue and one independently reviewable PR at a time, beginning with P01-M1.
+- The Owner-approved P02 gameplay authority is `docs/P02_GAMEPLAY_BASELINE.md` v1.2. Do not reinterpret it from the superseded vision or audit drafts.
+- The Owner-approved implementation authority is `docs/P02_DEVELOPMENT_PLAN.md` v1.2. Implement it through one unblocked GitHub Issue and one independently reviewable PR at a time.
+- P02 has exactly 12 active players; its initial fixed fixture is 12 first-year players, and the formal/friendly match roster is the whole active team. Any 22-player value under Legacy P01 code or P00/P01 evidence is historical regression data, not a current product rule.
 - P02 targets one simplified quarter/possession-chain match model. Model A remains an engineering regression baseline; model C is not an MVP implementation requirement.
 - P02 uses ten trainable abilities, a static body proxy, six fixed tendencies, at most one single-level archetype trait, fatigue, and individual chemistry. Morale, focus, pressure, injuries, pair relationships, and fixed five-player chemistry are not P02 state.
 - Values marked `[CALIBRATE]` may change only through the approved directional-scenario process. Calibration may not change the mechanic, phase boundary, record scope, or deferred-content decision.
@@ -35,4 +36,8 @@
 - Use task branches named `task/pXX-NNN-*` and remediation branches named `fix/pXX-NNN-*`.
 - Keep exact local/private experiment payloads under ignored `artifacts/local/**`; commit schemas, rubrics, summaries, and Gate evidence only.
 - Every phase must update its scope snapshot, traceability table, test/simulation report, known issues, rollback plan, and SHA-256 manifest.
+- P00-P03 headless or engineering-only merges do not redeploy the visual-reference Site. P04 owns the first playable Web release.
+- The first accepted P04 playable loop is not release-complete until its exact merged `main` revision is deployed to the public Site and the deployment is verified.
+- From P04 onward, every `main` merge that changes the playable Web path, player-visible rules/content, or release assets must deploy that same revision to the Site. Pure docs, evidence, CI, and headless-only changes do not require a new Site version.
+- The deployed build must display its phase and source commit. If deployment fails or points at another revision, mark the playable release blocked/out of sync; do not present the older Site as current.
 - A failing CI check is a blocker, not a deferred cleanup item.
