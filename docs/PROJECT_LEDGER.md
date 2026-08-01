@@ -17,7 +17,7 @@
 | Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`                |
 | Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`                |
 | Engine version               | `0.1.2-p01-r2`                                            |
-| Current decision             | 12-player amendment; first playable Site at P04          |
+| Current decision             | 12-player amendment; first playable Site at P04           |
 | Current implementation Issue | GitHub #11 (`P02-002`, READY / NOT STARTED)               |
 
 ## Frozen baseline
@@ -90,5 +90,3 @@ migration, test, Issue/PR, Gate, and rollback details without changing the gamep
 No P02 gameplay code, public match contract, V2 Schema, or balancing fixture has started. Legacy
 P01 remains an unchanged 22-player regression fixture; P02 implementation must use the 12-player
 rule. Downstream Issues are created progressively, not as prebuilt empty shells.
-
-
