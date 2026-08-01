@@ -81,6 +81,20 @@ pnpm dev:web
 
 The Web app is only a P00 engineering shell. It is not the P04 interaction prototype.
 
+## Playable Site release policy
+
+The current public Site is the separate T00 visual reference:
+https://sunny-court-t00.yuuuu-g.chatgpt.site
+
+It is not a playable build and is not expected to mirror P00-P03 headless or engineering-only
+commits. P04 owns the first playable Web loop. Once that P04 candidate is accepted and merged, the
+same `main` revision must be deployed and verified on the Site before the playable milestone is
+called complete.
+
+From P04 onward, any `main` change to the playable Web path, player-visible rules/content, or
+release assets must publish the same revision. The Site must show its phase and source commit;
+documentation, evidence, CI-only, and headless-only changes do not require a new deployment.
+
 ## Run one three-year simulation
 
 ```bash
