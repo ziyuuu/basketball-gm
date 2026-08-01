@@ -18,9 +18,9 @@
   Vitest aliases.
 - Stateless, stream-agnostic RNG seed/state primitives under `domain/core`; P01 stream names,
   bundle Schema, call counts, and sequential behavior stay in Legacy.
-- Boundary checks with TypeScript-AST import extraction, package/TypeScript alias resolution,
-  resolved module/package graphs, transitive Legacy/V2 reachability, one positive fixture, and 38
-  demonstrably failing negative fixtures.
+- Boundary checks with symbol-aware TypeScript-AST import extraction, loader capability/escape
+  analysis, package/TypeScript alias resolution, resolved module/package graphs, transitive
+  Legacy/V2 reachability, two positive fixtures, and 54 demonstrably failing negative fixtures.
 - P01 root/Legacy identity and persistence-contract regression coverage.
 - P02 implementation evidence and independent P02 manifest support.
 

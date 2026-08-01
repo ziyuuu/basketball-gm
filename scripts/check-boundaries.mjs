@@ -88,6 +88,18 @@ function isProductionSource(path) {
   return isSourceFile(path) && !/\.(test|spec)\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(path);
 }
 
+function isRuntimeImportRecord(record) {
+  if (['import-type', 'reference-types'].includes(record.kind)) return false;
+  if (
+    ['import', 'import-equals', 'export'].includes(record.kind) &&
+    record.bindings.length > 0 &&
+    record.bindings.every((binding) => binding.typeOnly)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 async function collectFiles(directory) {
   const result = [];
   let entries;
@@ -116,7 +128,20 @@ function extractImportRecords(source, file) {
         : ['.js', '.mjs', '.cjs'].includes(extension)
           ? ts.ScriptKind.JS
           : ts.ScriptKind.TS;
+  const compilerOptions = {
+    allowJs: true,
+    module: ts.ModuleKind.ESNext,
+    noLib: true,
+    noResolve: true,
+    target: ts.ScriptTarget.Latest,
+  };
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind);
+  const compilerHost = ts.createCompilerHost(compilerOptions);
+  compilerHost.fileExists = (candidate) => candidate === file;
+  compilerHost.readFile = (candidate) => (candidate === file ? source : undefined);
+  compilerHost.getSourceFile = (candidate) => (candidate === file ? sourceFile : undefined);
+  const program = ts.createProgram([file], compilerOptions, compilerHost);
+  const checker = program.getTypeChecker();
   const records = [];
 
   function addRecord(specifier, kind, bindings = []) {
@@ -198,17 +223,750 @@ function extractImportRecords(source, file) {
     }
   }
 
-  const getBuiltinModuleFunctions = new Set();
-  const processModuleObjects = new Set();
-  for (const record of records) {
-    if (record.kind !== 'import' || !['node:process', 'process'].includes(record.specifier)) {
-      continue;
+  const loaderCapabilities = new Map([
+    ['global:require', new Set(['loader:require'])],
+    ['global:module', new Set(['object:module'])],
+    ['global:process', new Set(['object:process'])],
+    ['global:global', new Set(['object:global'])],
+    ['global:globalThis', new Set(['object:global'])],
+  ]);
+
+  function isRuntimeBinding(symbol) {
+    return (symbol?.declarations ?? []).some(
+      (declaration) =>
+        !declaration.getSourceFile().isDeclarationFile &&
+        !(ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Ambient),
+    );
+  }
+
+  function bindingKey(identifier) {
+    const symbol = checker.getSymbolAtLocation(identifier);
+    if (symbol && isRuntimeBinding(symbol)) return symbol;
+    if (['require', 'module', 'process', 'global', 'globalThis'].includes(identifier.text)) {
+      return `global:${identifier.text}`;
     }
-    for (const binding of record.bindings) {
-      if (binding.imported === 'getBuiltinModule') getBuiltinModuleFunctions.add(binding.local);
-      if (['*', 'default'].includes(binding.imported)) processModuleObjects.add(binding.local);
+    return symbol ?? `unbound:${identifier.text}`;
+  }
+
+  function addCapabilities(identifier, capabilities) {
+    if (!identifier || capabilities.size === 0) return false;
+    const key = typeof identifier === 'string' ? identifier : bindingKey(identifier);
+    const existing = loaderCapabilities.get(key) ?? new Set();
+    const previousSize = existing.size;
+    for (const capability of capabilities) existing.add(capability);
+    loaderCapabilities.set(key, existing);
+    return existing.size !== previousSize;
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteralLike(statement.moduleSpecifier) &&
+      statement.importClause
+    ) {
+      const specifier = statement.moduleSpecifier.text;
+      const clause = statement.importClause;
+      if (clause.name && !clause.isTypeOnly) {
+        if (['node:process', 'process'].includes(specifier)) {
+          addCapabilities(clause.name, new Set(['object:process']));
+        }
+        if (dynamicLoaderSpecifiers.has(specifier)) {
+          addCapabilities(clause.name, new Set(['object:module']));
+        }
+      }
+      if (
+        clause.namedBindings &&
+        ts.isNamespaceImport(clause.namedBindings) &&
+        !clause.isTypeOnly
+      ) {
+        if (['node:process', 'process'].includes(specifier)) {
+          addCapabilities(clause.namedBindings.name, new Set(['object:process']));
+        }
+        if (dynamicLoaderSpecifiers.has(specifier)) {
+          addCapabilities(clause.namedBindings.name, new Set(['object:module']));
+        }
+      }
+      if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+        for (const element of clause.namedBindings.elements) {
+          if (clause.isTypeOnly || element.isTypeOnly) continue;
+          const imported = (element.propertyName ?? element.name).text;
+          if (['node:process', 'process'].includes(specifier) && imported === 'getBuiltinModule') {
+            addCapabilities(element.name, new Set(['callable:get-builtin-module']));
+          }
+          if (dynamicLoaderSpecifiers.has(specifier) && imported === 'createRequire') {
+            addCapabilities(element.name, new Set(['factory:create-require']));
+          }
+        }
+      }
+    }
+    if (
+      ts.isImportEqualsDeclaration(statement) &&
+      ts.isExternalModuleReference(statement.moduleReference) &&
+      statement.moduleReference.expression &&
+      ts.isStringLiteralLike(statement.moduleReference.expression)
+    ) {
+      const specifier = statement.moduleReference.expression.text;
+      if (statement.isTypeOnly) continue;
+      if (['node:process', 'process'].includes(specifier)) {
+        addCapabilities(statement.name, new Set(['object:process']));
+      }
+      if (dynamicLoaderSpecifiers.has(specifier)) {
+        addCapabilities(statement.name, new Set(['object:module']));
+      }
     }
   }
+
+  function unwrapExpression(expression) {
+    let current = expression;
+    while (
+      ts.isParenthesizedExpression(current) ||
+      ts.isAsExpression(current) ||
+      ts.isTypeAssertionExpression(current) ||
+      ts.isNonNullExpression(current) ||
+      ts.isSatisfiesExpression(current) ||
+      ts.isPartiallyEmittedExpression(current)
+    ) {
+      current = current.expression;
+    }
+    return current;
+  }
+
+  function accessedProperty(expression) {
+    const current = unwrapExpression(expression);
+    if (ts.isPropertyAccessExpression(current)) return current.name.text;
+    if (
+      ts.isElementAccessExpression(current) &&
+      current.argumentExpression &&
+      ts.isStringLiteralLike(unwrapExpression(current.argumentExpression))
+    ) {
+      return unwrapExpression(current.argumentExpression).text;
+    }
+    return undefined;
+  }
+
+  function staticPropertyName(name) {
+    if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) return name.text;
+    if (ts.isComputedPropertyName(name)) {
+      const expression = unwrapExpression(name.expression);
+      return ts.isStringLiteralLike(expression) ? expression.text : undefined;
+    }
+    return undefined;
+  }
+
+  function propertyCapabilities(capabilities, property) {
+    const result = new Set();
+    for (const capability of capabilities) {
+      if (capability === 'object:module' && property === 'require') {
+        result.add('loader:module-require');
+      }
+      if (capability === 'object:module' && property === 'createRequire') {
+        result.add('factory:create-require');
+      }
+      if (capability === 'object:process' && property === 'getBuiltinModule') {
+        result.add('callable:get-builtin-module');
+      }
+      if (capability === 'object:global' && property === 'require') {
+        result.add('loader:require');
+      }
+      if (capability === 'object:global' && property === 'module') {
+        result.add('object:module');
+      }
+      if (capability === 'object:global' && property === 'process') {
+        result.add('object:process');
+      }
+      if (capability === 'object:global' && ['global', 'globalThis'].includes(property)) {
+        result.add('object:global');
+      }
+      if (capability.startsWith('loader:') && property === 'resolve') {
+        result.add('loader:require-resolve');
+      }
+    }
+    return result;
+  }
+
+  function staticStringExpression(expression) {
+    if (!expression) return undefined;
+    const unwrapped = unwrapExpression(expression);
+    return ts.isStringLiteralLike(unwrapped) ? unwrapped.text : undefined;
+  }
+
+  function isInvokableCapability(capability) {
+    return (
+      capability.startsWith('loader:') ||
+      capability === 'callable:get-builtin-module' ||
+      capability === 'factory:create-require'
+    );
+  }
+
+  function isModuleLoadingCapability(capability) {
+    return ['loader:require', 'loader:module-require'].includes(capability);
+  }
+
+  function invocationForCall(call) {
+    const called = unwrapExpression(call.expression);
+    if (
+      (ts.isPropertyAccessExpression(called) || ts.isElementAccessExpression(called)) &&
+      ['call', 'apply'].includes(accessedProperty(called) ?? '')
+    ) {
+      const forwardedCapabilities = capabilitiesForExpression(called.expression);
+      if ([...forwardedCapabilities].some(isInvokableCapability)) {
+        const method = accessedProperty(called);
+        const argumentList = unwrapExpression(call.arguments[1]);
+        return {
+          arguments:
+            method === 'call'
+              ? [...call.arguments].slice(1)
+              : ts.isArrayLiteralExpression(argumentList)
+                ? [...argumentList.elements]
+                : [],
+          capabilities: forwardedCapabilities,
+        };
+      }
+    }
+    return {
+      arguments: [...call.arguments],
+      capabilities: capabilitiesForExpression(called),
+    };
+  }
+
+  function capabilitiesForExpression(expression) {
+    const current = unwrapExpression(expression);
+    if (ts.isIdentifier(current)) {
+      return new Set(loaderCapabilities.get(bindingKey(current)) ?? []);
+    }
+    if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+      const property = accessedProperty(current);
+      const object = unwrapExpression(current.expression);
+      if (
+        ts.isMetaProperty(object) &&
+        object.keywordToken === ts.SyntaxKind.ImportKeyword &&
+        ['glob', 'globEager'].includes(property ?? '')
+      ) {
+        return new Set(['loader:import-meta-glob']);
+      }
+      return propertyCapabilities(capabilitiesForExpression(object), property);
+    }
+    if (ts.isCallExpression(current)) {
+      const called = unwrapExpression(current.expression);
+      const result = new Set();
+      if (
+        (ts.isPropertyAccessExpression(called) || ts.isElementAccessExpression(called)) &&
+        accessedProperty(called) === 'bind'
+      ) {
+        const boundCapabilities = capabilitiesForExpression(called.expression);
+        for (const capability of boundCapabilities) {
+          if (isInvokableCapability(capability)) result.add(capability);
+        }
+        return result;
+      }
+      const invocation = invocationForCall(current);
+      const calledCapabilities = invocation.capabilities;
+      const firstArgument = staticStringExpression(invocation.arguments[0]);
+      if (calledCapabilities.has('factory:create-require')) result.add('loader:require');
+      if (
+        calledCapabilities.has('callable:get-builtin-module') &&
+        dynamicLoaderSpecifiers.has(firstArgument)
+      ) {
+        result.add('object:module');
+      }
+      if ([...calledCapabilities].some(isModuleLoadingCapability)) {
+        if (dynamicLoaderSpecifiers.has(firstArgument)) result.add('object:module');
+        if (['node:process', 'process'].includes(firstArgument)) result.add('object:process');
+      }
+      return result;
+    }
+    if (ts.isConditionalExpression(current)) {
+      return new Set([
+        ...capabilitiesForExpression(current.whenTrue),
+        ...capabilitiesForExpression(current.whenFalse),
+      ]);
+    }
+    if (ts.isBinaryExpression(current)) {
+      if (current.operatorToken.kind === ts.SyntaxKind.CommaToken) {
+        return capabilitiesForExpression(current.right);
+      }
+      if (
+        [
+          ts.SyntaxKind.BarBarToken,
+          ts.SyntaxKind.AmpersandAmpersandToken,
+          ts.SyntaxKind.QuestionQuestionToken,
+        ].includes(current.operatorToken.kind)
+      ) {
+        return new Set([
+          ...capabilitiesForExpression(current.left),
+          ...capabilitiesForExpression(current.right),
+        ]);
+      }
+    }
+    return new Set();
+  }
+
+  function bindCapabilities(name, capabilities) {
+    if (ts.isIdentifier(name)) return addCapabilities(name, capabilities);
+    if (ts.isObjectBindingPattern(name)) {
+      let changed = false;
+      for (const element of name.elements) {
+        if (element.dotDotDotToken) {
+          changed = bindCapabilities(element.name, capabilities) || changed;
+          continue;
+        }
+        const property = element.propertyName
+          ? staticPropertyName(element.propertyName)
+          : ts.isIdentifier(element.name)
+            ? element.name.text
+            : undefined;
+        changed =
+          bindCapabilities(element.name, propertyCapabilities(capabilities, property)) || changed;
+      }
+      return changed;
+    }
+    return false;
+  }
+
+  function bindAssignmentTarget(target, capabilities) {
+    const current = unwrapExpression(target);
+    if (ts.isIdentifier(current)) return addCapabilities(current, capabilities);
+    if (
+      ts.isBinaryExpression(current) &&
+      current.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      return bindAssignmentTarget(current.left, capabilities);
+    }
+    if (ts.isObjectLiteralExpression(current)) {
+      let changed = false;
+      for (const property of current.properties) {
+        if (ts.isSpreadAssignment(property)) {
+          changed = bindAssignmentTarget(property.expression, capabilities) || changed;
+          continue;
+        }
+        if (ts.isShorthandPropertyAssignment(property)) {
+          changed =
+            bindAssignmentTarget(
+              property.name,
+              propertyCapabilities(capabilities, property.name.text),
+            ) || changed;
+          continue;
+        }
+        if (ts.isPropertyAssignment(property)) {
+          const propertyName = staticPropertyName(property.name);
+          changed =
+            bindAssignmentTarget(
+              property.initializer,
+              propertyCapabilities(capabilities, propertyName),
+            ) || changed;
+        }
+      }
+      return changed;
+    }
+    if (ts.isArrayLiteralExpression(current)) {
+      let changed = false;
+      for (const element of current.elements) {
+        if (!ts.isOmittedExpression(element)) {
+          changed = bindAssignmentTarget(element, capabilities) || changed;
+        }
+      }
+      return changed;
+    }
+    return false;
+  }
+
+  function collectLoaderAliases(node) {
+    let changed = false;
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      changed = bindCapabilities(node.name, capabilitiesForExpression(node.initializer)) || changed;
+    }
+    if (ts.isParameter(node) && node.initializer) {
+      changed = bindCapabilities(node.name, capabilitiesForExpression(node.initializer)) || changed;
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      [
+        ts.SyntaxKind.EqualsToken,
+        ts.SyntaxKind.BarBarEqualsToken,
+        ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+        ts.SyntaxKind.QuestionQuestionEqualsToken,
+      ].includes(node.operatorToken.kind)
+    ) {
+      changed = bindAssignmentTarget(node.left, capabilitiesForExpression(node.right)) || changed;
+    }
+    ts.forEachChild(node, (child) => {
+      changed = collectLoaderAliases(child) || changed;
+    });
+    return changed;
+  }
+
+  while (collectLoaderAliases(sourceFile)) {
+    // Iterate to a fixed point so aliases declared through another alias are name-independent.
+  }
+
+  function hasLoaderCapability(capabilities) {
+    return [...capabilities].some(
+      (capability) =>
+        capability.startsWith('loader:') ||
+        capability === 'callable:get-builtin-module' ||
+        capability === 'factory:create-require' ||
+        capability === 'object:module' ||
+        capability === 'object:process' ||
+        capability === 'object:global',
+    );
+  }
+
+  function isSupportedCapabilityTarget(target, capabilities) {
+    const current = unwrapExpression(target);
+    if (ts.isIdentifier(current)) return true;
+    if (
+      ts.isBinaryExpression(current) &&
+      current.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      return isSupportedCapabilityTarget(current.left, capabilities);
+    }
+    if (ts.isObjectBindingPattern(current)) {
+      return current.elements.every((element) => {
+        if (element.dotDotDotToken) return !hasLoaderCapability(capabilities);
+        const property = element.propertyName
+          ? staticPropertyName(element.propertyName)
+          : ts.isIdentifier(element.name)
+            ? element.name.text
+            : undefined;
+        if (element.propertyName && property === undefined) {
+          return !hasLoaderCapability(capabilities);
+        }
+        return isSupportedCapabilityTarget(
+          element.name,
+          propertyCapabilities(capabilities, property),
+        );
+      });
+    }
+    if (ts.isObjectLiteralExpression(current)) {
+      return current.properties.every((property) => {
+        if (ts.isSpreadAssignment(property)) return !hasLoaderCapability(capabilities);
+        if (ts.isShorthandPropertyAssignment(property)) {
+          return isSupportedCapabilityTarget(
+            property.name,
+            propertyCapabilities(capabilities, property.name.text),
+          );
+        }
+        if (!ts.isPropertyAssignment(property)) return !hasLoaderCapability(capabilities);
+        const propertyName = staticPropertyName(property.name);
+        if (propertyName === undefined) return !hasLoaderCapability(capabilities);
+        return isSupportedCapabilityTarget(
+          property.initializer,
+          propertyCapabilities(capabilities, propertyName),
+        );
+      });
+    }
+    if (ts.isArrayBindingPattern(current) || ts.isArrayLiteralExpression(current)) {
+      return !hasLoaderCapability(capabilities);
+    }
+    return !hasLoaderCapability(capabilities);
+  }
+
+  function containsNode(container, node) {
+    return container.pos <= node.pos && node.end <= container.end;
+  }
+
+  function isDeclarationIdentifier(identifier) {
+    const parent = identifier.parent;
+    if (!parent) return false;
+    if (
+      (ts.isVariableDeclaration(parent) ||
+        ts.isParameter(parent) ||
+        ts.isBindingElement(parent) ||
+        ts.isFunctionDeclaration(parent) ||
+        ts.isFunctionExpression(parent) ||
+        ts.isClassDeclaration(parent) ||
+        ts.isClassExpression(parent) ||
+        ts.isImportClause(parent) ||
+        ts.isNamespaceImport(parent) ||
+        ts.isImportEqualsDeclaration(parent)) &&
+      parent.name === identifier
+    ) {
+      return true;
+    }
+    if (ts.isImportSpecifier(parent) && parent.name === identifier) return true;
+    if (
+      (ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent)) &&
+      parent.name === identifier
+    ) {
+      return true;
+    }
+    if (ts.isPropertySignature(parent) || ts.isMethodSignature(parent)) return true;
+    return false;
+  }
+
+  function isSupportedAliasCarrier(identifier) {
+    for (let parent = identifier.parent; parent; parent = parent.parent) {
+      if (
+        ts.isVariableDeclaration(parent) &&
+        parent.initializer &&
+        containsNode(parent.initializer, identifier)
+      ) {
+        const capabilities = capabilitiesForExpression(parent.initializer);
+        return (
+          hasLoaderCapability(capabilities) &&
+          isSupportedCapabilityTarget(parent.name, capabilities)
+        );
+      }
+      if (
+        ts.isParameter(parent) &&
+        parent.initializer &&
+        containsNode(parent.initializer, identifier)
+      ) {
+        const capabilities = capabilitiesForExpression(parent.initializer);
+        return (
+          hasLoaderCapability(capabilities) &&
+          isSupportedCapabilityTarget(parent.name, capabilities)
+        );
+      }
+      if (
+        ts.isBinaryExpression(parent) &&
+        [
+          ts.SyntaxKind.EqualsToken,
+          ts.SyntaxKind.BarBarEqualsToken,
+          ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+          ts.SyntaxKind.QuestionQuestionEqualsToken,
+        ].includes(parent.operatorToken.kind) &&
+        containsNode(parent.right, identifier)
+      ) {
+        const capabilities = capabilitiesForExpression(parent.right);
+        return (
+          hasLoaderCapability(capabilities) &&
+          isSupportedCapabilityTarget(parent.left, capabilities)
+        );
+      }
+      if (ts.isStatement(parent)) break;
+    }
+    return false;
+  }
+
+  function isSafeLoaderReference(identifier) {
+    if (isDeclarationIdentifier(identifier)) return true;
+    const parent = identifier.parent;
+    if (!parent) return false;
+    for (let ancestor = parent; ancestor && !ts.isStatement(ancestor); ancestor = ancestor.parent) {
+      if (
+        ts.isBinaryExpression(ancestor) &&
+        containsNode(ancestor.left, identifier) &&
+        [
+          ts.SyntaxKind.EqualsToken,
+          ts.SyntaxKind.BarBarEqualsToken,
+          ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+          ts.SyntaxKind.QuestionQuestionEqualsToken,
+        ].includes(ancestor.operatorToken.kind)
+      ) {
+        return true;
+      }
+    }
+    if (
+      ts.isBinaryExpression(parent) &&
+      containsNode(parent.left, identifier) &&
+      [
+        ts.SyntaxKind.EqualsToken,
+        ts.SyntaxKind.BarBarEqualsToken,
+        ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+        ts.SyntaxKind.QuestionQuestionEqualsToken,
+      ].includes(parent.operatorToken.kind)
+    ) {
+      return true;
+    }
+    let expression = identifier;
+    while (
+      expression.parent &&
+      (ts.isParenthesizedExpression(expression.parent) ||
+        ts.isAsExpression(expression.parent) ||
+        ts.isTypeAssertionExpression(expression.parent) ||
+        ts.isNonNullExpression(expression.parent) ||
+        ts.isSatisfiesExpression(expression.parent) ||
+        ts.isPartiallyEmittedExpression(expression.parent))
+    ) {
+      expression = expression.parent;
+    }
+    if (ts.isCallExpression(expression.parent) && expression.parent.expression === expression) {
+      return true;
+    }
+    if (
+      (ts.isPropertyAccessExpression(expression.parent) ||
+        ts.isElementAccessExpression(expression.parent)) &&
+      expression.parent.expression === expression
+    ) {
+      const property = accessedProperty(expression.parent);
+      const capabilities = capabilitiesForExpression(identifier);
+      if (
+        propertyCapabilities(capabilities, property).size > 0 ||
+        (capabilities.has('object:module') && property === 'exports') ||
+        (capabilities.has('object:process') && property !== undefined) ||
+        (capabilities.has('object:global') && property !== undefined) ||
+        ([...capabilities].some((capability) => capability.startsWith('loader:')) &&
+          ['bind', 'call', 'apply'].includes(property ?? ''))
+      ) {
+        return true;
+      }
+    }
+    return isSupportedAliasCarrier(identifier);
+  }
+
+  let hasLoaderEscape = false;
+  function isWithinAssignmentTarget(node) {
+    for (let parent = node.parent; parent && !ts.isStatement(parent); parent = parent.parent) {
+      if (
+        ts.isBinaryExpression(parent) &&
+        containsNode(parent.left, node) &&
+        [
+          ts.SyntaxKind.EqualsToken,
+          ts.SyntaxKind.BarBarEqualsToken,
+          ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+          ts.SyntaxKind.QuestionQuestionEqualsToken,
+        ].includes(parent.operatorToken.kind)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function visitLoaderEscapes(node) {
+    if (
+      ts.isIdentifier(node) &&
+      hasLoaderCapability(capabilitiesForExpression(node)) &&
+      !isSafeLoaderReference(node)
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (ts.isCallExpression(node)) {
+      const called = unwrapExpression(node.expression);
+      const forwardingMethod =
+        ts.isPropertyAccessExpression(called) || ts.isElementAccessExpression(called)
+          ? accessedProperty(called)
+          : undefined;
+      const forwardsKnownLoader =
+        ['bind', 'call', 'apply'].includes(forwardingMethod ?? '') &&
+        [...capabilitiesForExpression(called.expression)].some(isInvokableCapability);
+      const firstCapabilityArgument = forwardsKnownLoader ? 1 : 0;
+      if (
+        [...node.arguments]
+          .slice(firstCapabilityArgument)
+          .some((argument) => hasLoaderCapability(capabilitiesForExpression(argument)))
+      ) {
+        hasLoaderEscape = true;
+      }
+    }
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const baseCapabilities = capabilitiesForExpression(node.expression);
+      const property = accessedProperty(node);
+      if (
+        [...baseCapabilities].some(isInvokableCapability) &&
+        propertyCapabilities(baseCapabilities, property).size === 0 &&
+        !['bind', 'call', 'apply'].includes(property ?? '')
+      ) {
+        hasLoaderEscape = true;
+      }
+    }
+    if (
+      ts.isPropertyAssignment(node) &&
+      !isWithinAssignmentTarget(node) &&
+      hasLoaderCapability(capabilitiesForExpression(node.initializer))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isShorthandPropertyAssignment(node) &&
+      !isWithinAssignmentTarget(node) &&
+      hasLoaderCapability(capabilitiesForExpression(node.name))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isArrayLiteralExpression(node) &&
+      node.elements.some(
+        (element) =>
+          !ts.isOmittedExpression(element) &&
+          hasLoaderCapability(capabilitiesForExpression(element)),
+      )
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isPropertyDeclaration(node) &&
+      node.initializer &&
+      hasLoaderCapability(capabilitiesForExpression(node.initializer))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isArrowFunction(node) &&
+      !ts.isBlock(node.body) &&
+      hasLoaderCapability(capabilitiesForExpression(node.body))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isSpreadAssignment(node) &&
+      hasLoaderCapability(capabilitiesForExpression(node.expression))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isTaggedTemplateExpression(node) &&
+      hasLoaderCapability(capabilitiesForExpression(node.tag))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      (ts.isReturnStatement(node) || ts.isThrowStatement(node)) &&
+      node.expression &&
+      hasLoaderCapability(capabilitiesForExpression(node.expression))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isExportAssignment(node) &&
+      hasLoaderCapability(capabilitiesForExpression(node.expression))
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      [
+        ts.SyntaxKind.EqualsToken,
+        ts.SyntaxKind.BarBarEqualsToken,
+        ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+        ts.SyntaxKind.QuestionQuestionEqualsToken,
+      ].includes(node.operatorToken.kind)
+    ) {
+      const capabilities = capabilitiesForExpression(node.right);
+      if (
+        hasLoaderCapability(capabilities) &&
+        !isSupportedCapabilityTarget(node.left, capabilities)
+      ) {
+        hasLoaderEscape = true;
+      }
+    }
+    if (
+      ts.isVariableStatement(node) &&
+      node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
+      node.declarationList.declarations.some((declaration) => {
+        if (!ts.isIdentifier(declaration.name)) return false;
+        return hasLoaderCapability(capabilitiesForExpression(declaration.name));
+      })
+    ) {
+      hasLoaderEscape = true;
+    }
+    if (
+      ts.isExportDeclaration(node) &&
+      !node.moduleSpecifier &&
+      node.exportClause &&
+      ts.isNamedExports(node.exportClause) &&
+      node.exportClause.elements.some((element) => {
+        const localSymbol = checker.getExportSpecifierLocalTargetSymbol(element);
+        return hasLoaderCapability(new Set(loaderCapabilities.get(localSymbol) ?? []));
+      })
+    ) {
+      hasLoaderEscape = true;
+    }
+    ts.forEachChild(node, visitLoaderEscapes);
+  }
+  visitLoaderEscapes(sourceFile);
+  if (hasLoaderEscape) addRecord('<loader-escape>', 'loader-escape');
 
   function visitCalls(node) {
     if (ts.isImportTypeNode(node)) {
@@ -224,62 +982,23 @@ function extractImportRecords(source, file) {
     if (ts.isCallExpression(node)) {
       const callExpression = ts.skipParentheses(node.expression);
       const isDynamicImport = callExpression.kind === ts.SyntaxKind.ImportKeyword;
-      const isRequire = ts.isIdentifier(callExpression) && callExpression.text === 'require';
-      const calledObject =
-        ts.isPropertyAccessExpression(callExpression) ||
-        ts.isElementAccessExpression(callExpression)
-          ? ts.skipParentheses(callExpression.expression)
-          : undefined;
-      const calledProperty = ts.isPropertyAccessExpression(callExpression)
-        ? callExpression.name.text
-        : ts.isElementAccessExpression(callExpression) &&
-            callExpression.argumentExpression &&
-            ts.isStringLiteralLike(callExpression.argumentExpression)
-          ? callExpression.argumentExpression.text
-          : undefined;
-      const isRequireResolve =
-        calledObject !== undefined &&
-        ts.isIdentifier(calledObject) &&
-        calledObject.text === 'require' &&
-        calledProperty === 'resolve';
-      const isModuleRequire =
-        calledObject !== undefined &&
-        ts.isIdentifier(calledObject) &&
-        calledObject.text === 'module' &&
-        calledProperty === 'require';
-      const isImportMetaGlob =
-        calledObject !== undefined &&
-        ts.isMetaProperty(calledObject) &&
-        calledObject.keywordToken === ts.SyntaxKind.ImportKeyword &&
-        ['glob', 'globEager'].includes(calledProperty ?? '');
-      const isGetBuiltinModule =
-        (ts.isIdentifier(callExpression) && getBuiltinModuleFunctions.has(callExpression.text)) ||
-        (calledObject !== undefined &&
-          ts.isIdentifier(calledObject) &&
-          (calledObject.text === 'process' || processModuleObjects.has(calledObject.text)) &&
-          calledProperty === 'getBuiltinModule');
-      if (
-        isDynamicImport ||
-        isRequire ||
-        isRequireResolve ||
-        isModuleRequire ||
-        isImportMetaGlob ||
-        isGetBuiltinModule
-      ) {
-        const argument = node.arguments[0];
+      const invocation = isDynamicImport
+        ? { arguments: [...node.arguments], capabilities: new Set() }
+        : invocationForCall(node);
+      const capabilities = invocation.capabilities;
+      const loaderCapability = [...capabilities].find((capability) =>
+        capability.startsWith('loader:'),
+      );
+      const specifier = staticStringExpression(invocation.arguments[0]);
+      const isGetBuiltinModule = capabilities.has('callable:get-builtin-module');
+      if (isDynamicImport || loaderCapability || isGetBuiltinModule) {
         addRecord(
-          argument && ts.isStringLiteralLike(argument) ? argument.text : undefined,
+          specifier,
           isDynamicImport
             ? 'dynamic-import'
-            : isImportMetaGlob
-              ? 'import-meta-glob'
-              : isGetBuiltinModule
-                ? 'get-builtin-module'
-                : isRequireResolve
-                  ? 'require-resolve'
-                  : isModuleRequire
-                    ? 'module-require'
-                    : 'require',
+            : isGetBuiltinModule
+              ? 'get-builtin-module'
+              : loaderCapability.slice('loader:'.length),
         );
       }
     }
@@ -1043,8 +1762,9 @@ async function runBoundaryCheck(root, { fixture = false } = {}) {
     if (
       entry.importRecords.some(
         (record) =>
-          dynamicLoaderSpecifiers.has(record.resolvedSpecifier) ||
-          ['get-builtin-module', 'import-meta-glob'].includes(record.kind),
+          (dynamicLoaderSpecifiers.has(record.resolvedSpecifier) &&
+            isRuntimeImportRecord(record)) ||
+          ['get-builtin-module', 'import-meta-glob', 'loader-escape'].includes(record.kind),
       )
     ) {
       errors.push(`Dynamic module loaders are forbidden in production source: ${entry.path}.`);

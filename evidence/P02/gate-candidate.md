@@ -15,5 +15,8 @@ Owner review found boundary false negatives after its CI and audit. Only a later
 contains `boundary-remediation.md`, passes fresh CI, and passes a fresh detached audit can return to
 `OWNER_CONFIRMATION`.
 
+Candidate `584143b97270275eefd8159b13639bbb90c2898d` is also superseded: its fresh detached audit
+found a CommonJS `require` alias false negative. CI run #26 and that audit are historical only.
+
 This is implementation-thread evidence for P02-001. It is not Gate B, Gate C, Gate D, or a P02
 completion decision. P02 gameplay, Match/V2 production contracts, and P02-002 remain unstarted.

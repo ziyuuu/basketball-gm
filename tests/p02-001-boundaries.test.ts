@@ -30,7 +30,12 @@ describe('P02-001 boundary checker fixtures', () => {
 
   it.each([
     ['negative-core-imports-v2', 'Core must not import future V2 production code'],
+    ['negative-core-require-alias-v2', 'Core must not import future V2 production code'],
     ['negative-v2-imports-legacy-root', 'Future V2 production source must not import Legacy P01'],
+    [
+      'negative-v2-require-alias-legacy-root',
+      'Future V2 production source must not import Legacy P01',
+    ],
     [
       'negative-v2-imports-legacy-wrapper',
       'Future V2 production source must not import Legacy P01',
@@ -53,13 +58,30 @@ describe('P02-001 boundary checker fixtures', () => {
       'domain/match must not import a mutable GameState resolver',
     ],
     [
+      'negative-match-require-alias-resolver',
+      'domain/match must not import a mutable GameState resolver',
+    ],
+    [
       'negative-match-imports-approved-core-resolver',
       'domain/match must not import a mutable GameState resolver',
     ],
     ['negative-cli-resolver', 'Production CLI must not call a domain state-change resolver'],
     [
-      'negative-cli-get-builtin-module',
-      'Dynamic module loaders are forbidden in production source',
+      'negative-cli-require-alias-resolver',
+      'Production CLI must not call a domain state-change resolver',
+    ],
+    [
+      'negative-cli-require-alias-chain',
+      'Production CLI must not call a domain state-change resolver',
+    ],
+    [
+      'negative-cli-module-destructure-assignment',
+      'Production CLI must not call a domain state-change resolver',
+    ],
+    ['negative-cli-require-call', 'Production CLI must not call a domain state-change resolver'],
+    [
+      'negative-cli-global-object-require-alias',
+      'Production CLI must not call a domain state-change resolver',
     ],
     ['negative-tsconfig-core-imports-v2', 'Core must not import future V2 production code'],
     [
@@ -107,10 +129,45 @@ describe('P02-001 boundary checker fixtures', () => {
     ['negative-core-imports-legacy', 'Core must not import Legacy P01'],
     ['negative-package-cycle', 'Package cycle'],
     ['negative-cli-module-require', 'Production CLI must not call a domain state-change resolver'],
+    [
+      'negative-cli-get-builtin-module',
+      'Dynamic module loaders are forbidden in production source',
+    ],
+    [
+      'negative-loader-export-specifier',
+      'Dynamic module loaders are forbidden in production source',
+    ],
+    [
+      'negative-loader-identity-wrapper',
+      'Dynamic module loaders are forbidden in production source',
+    ],
+    [
+      'negative-loader-object-container',
+      'Dynamic module loaders are forbidden in production source',
+    ],
+    [
+      'negative-loader-process-wrapper',
+      'Dynamic module loaders are forbidden in production source',
+    ],
+    ['negative-loader-member-export', 'Dynamic module loaders are forbidden in production source'],
+    ['negative-loader-value-of', 'Dynamic module loaders are forbidden in production source'],
   ])('rejects %s', (fixture, expectedError) => {
     const result = runFixture(fixture);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(expectedError);
+  });
+
+  it('allows injected functions that shadow loader-like global names', () => {
+    const result = runFixture('positive-loader-shadow');
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+  });
+
+  it('tracks loader capabilities forwarded through bind, call, and apply', () => {
+    const result = runFixture('negative-cli-forwarded-loader-invocations');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Dynamic module loaders are forbidden in production source');
+    expect(result.stderr).toContain('Production CLI must not call a domain state-change resolver');
   });
 
   it('rejects Match imports that cross into application through relative paths', () => {
@@ -127,6 +184,13 @@ describe('P02-001 boundary checker fixtures', () => {
     expect(result.stderr).toContain(
       'Web must not import application/domain/persistence production code',
     );
+  });
+
+  it('tracks a process loader obtained through module.require', () => {
+    const result = runFixture('negative-cli-module-require-loader-chain');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Dynamic module loaders are forbidden in production source');
+    expect(result.stderr).toContain('Production CLI must not call a domain state-change resolver');
   });
 
   it('rejects Vite import.meta glob loaders that reach domain from Web', () => {

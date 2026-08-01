@@ -8,7 +8,9 @@
 - The P01 annual-grant integrity behavior remains a Legacy regression obligation; it is not
   reimplemented or weakened in this slice.
 - Candidate `930fb44cf773934c8a0c1f2a0f801f8f600df053` was rejected for boundary false negatives.
-  Its CI and audit results are historical only and cannot authorize merge. The replacement
-  candidate requires fresh exact-SHA CI and a fresh detached audit.
+  Candidate `584143b97270275eefd8159b13639bbb90c2898d` was then rejected when fresh detached audit
+  found a CommonJS loader-alias false negative. Their CI and audit results are historical only and
+  cannot authorize merge. The next candidate requires fresh exact-SHA CI and a fresh detached
+  audit.
 - This evidence is implementation-thread evidence only and does not replace CI, independent audit,
   Gate B/C/D, or Owner merge confirmation.
