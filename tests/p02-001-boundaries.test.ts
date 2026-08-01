@@ -95,6 +95,7 @@ describe('P02-001 boundary checker fixtures', () => {
       'negative-cli-module-destructure-assignment',
       'Production CLI must not call a domain state-change resolver',
     ],
+    ['negative-cli-module-constructor-load-resolver', 'Non-static module specifier is forbidden'],
     ['negative-cli-require-call', 'Production CLI must not call a domain state-change resolver'],
     [
       'negative-cli-global-object-require-alias',

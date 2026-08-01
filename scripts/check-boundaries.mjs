@@ -597,6 +597,12 @@ function extractImportRecords(source, file) {
       ) {
         result.add('value:function');
       }
+      if (capability === 'object:module' && property === 'constructor') {
+        result.add('constructor:module');
+      }
+      if (capability === 'constructor:module' && property === '_load') {
+        result.add('loader:module-load');
+      }
       if (
         ['value:function', 'object:function-prototype'].includes(capability) &&
         property === 'constructor'

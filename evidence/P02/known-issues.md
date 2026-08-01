@@ -15,6 +15,9 @@
   historical only and cannot authorize merge. Candidate
   `001c8166986f769930b2a914a50311bbd8acc99f` was then rejected because runtime-object
   constructor chains could erase code-generation capability. CI #30 and that audit are likewise
-  historical only. The next candidate requires fresh exact-SHA CI and a fresh detached audit.
+  historical only. Candidate `b1e61a09beef00939feaedbfd224d37d0be15521` was then rejected
+  because `module.constructor._load(...)` lost loader capability and could execute a domain state
+  resolver while the checker exited 0. CI #32 and the earlier detached PASS are also historical
+  only. The next candidate requires fresh exact-SHA CI and a fresh detached audit.
 - This evidence is implementation-thread evidence only and does not replace CI, independent audit,
   Gate B/C/D, or Owner merge confirmation.

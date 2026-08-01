@@ -45,6 +45,11 @@ and call an arbitrary-name state resolver with exit 0. Equivalent `module`, `Ref
 `Object.getPrototypeOf(Reflect)` forms are now isolated fixtures. CI run #30 and every conclusion
 tied to that SHA are historical only.
 
+Candidate `b1e61a09beef00939feaedbfd224d37d0be15521` then failed formal review because
+`module.constructor` retained only ordinary function capability: its static `_load` member could
+load and execute an arbitrary-name domain state resolver while the checker incorrectly exited 0.
+CI run #32 and the earlier detached PASS tied to that SHA are invalid for merge authorization.
+
 Before changing the checker, each isolated fixture below incorrectly exited 0:
 
 - `negative-core-imports-v2`;
@@ -61,11 +66,12 @@ imports, out-of-graph/test bridges, Vite loaders/HTML entries, Node/CommonJS loa
 references, and source-query suffixes are covered. Capabilities are retained through `new`, `Proxy`,
 `Reflect.get`/`Reflect.apply`, property extraction, object/class/array members, function returns,
 IIFEs, and call/apply/bind forwarding; ambient eval/Function constructors are forbidden before
-generated code can hide an edge. The fixture suite now has two positive fixtures and 103 negative
+generated code can hide an edge. The fixture suite now has two positive fixtures and 104 negative
 fixtures. Every fixture root is referenced exactly once. The four Owner-blocking cases plus
 approved-path, compatibility-wrapper, TypeScript alias, dynamic/non-static import, relative
 cross-package, source-derived cycle, binding shadow, ordinary constructor, loader escape,
-new/Proxy/codegen, container, and forwarding cases have explicit assertions.
+new/Proxy/codegen, container, forwarding, and `module.constructor._load` cases have explicit
+assertions.
 
 ## Final checks
 
@@ -74,7 +80,7 @@ pnpm check
 ```
 
 Passed: formatting, ESLint, TypeScript, boundary check, Web build, CLI build, and 10 test files /
-136 tests. The original 29 tests remain; P02-001 adds 107 scaffold/boundary tests.
+137 tests. The original 29 tests remain; P02-001 adds 108 scaffold/boundary tests.
 
 ```bash
 pnpm exec vitest run \
@@ -88,7 +94,7 @@ pnpm exec vitest run \
   tests/p02-001-legacy-subpaths.test.ts
 ```
 
-Passed: 8 test files / 132 tests. This includes P01-M1's 17 re-signed attack rejections, eight legal
+Passed: 8 test files / 133 tests. This includes P01-M1's 17 re-signed attack rejections, eight legal
 annual-grant boundaries, root/Legacy export identity, memory latest→backup equivalence, Node and
 IndexedDB persistence tests, and isolated boundary positive/negative fixtures.
 
@@ -104,8 +110,11 @@ property/container, return-flow, and call/apply/bind/Reflect forwarding cases ar
 rejected, while local shadowing and ordinary constructors remain accepted. Known runtime-object
 constructor chains and `Object.getPrototypeOf` propagation are also capability-aware, so the first
 constructor access cannot silently turn a code-generation path into an ordinary instance
-constructor. All 105 fixture roots are referenced exactly once, and the five new
-runtime-constructor-chain negatives each produce only the expected dynamic-code diagnostic.
+constructor. The five runtime-constructor-chain negatives each produce only the expected
+dynamic-code diagnostic.
+The additional `module.constructor._load` negative reproduces the review payload exactly, is
+runtime-executable under Node 24.14.0, and now produces the single expected non-static-loader
+diagnostic. All 106 fixture roots are referenced exactly once.
 
 Historical integrity checks passed:
 

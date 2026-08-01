@@ -6,10 +6,11 @@
 - Fresh-audit-rejected candidate: `584143b97270275eefd8159b13639bbb90c2898d`
 - Adversarial-review-rejected candidate: `e0d6a1a2e8659bfb0ee7baea8e06c2dbb2b63fbb`
 - Fresh-audit-rejected candidate: `001c8166986f769930b2a914a50311bbd8acc99f`
+- Formal-review-rejected candidate: `b1e61a09beef00939feaedbfd224d37d0be15521`
 - Parent main: `5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`
-- Disposition: all four candidates were rejected and not merged
-- Consequence: CI runs #24/#26/#28/#30 and every audit tied to those SHAs are invalid for merge
-  authorization
+- Disposition: all five candidates were rejected and not merged
+- Consequence: CI runs #24/#26/#28/#30/#32 and every audit tied to those SHAs are invalid for
+  merge authorization
 
 ## Pre-fix reproduction
 
@@ -52,6 +53,13 @@ loss was reproducible through `module`, `Reflect`, and `Object.getPrototypeOf(Re
 chains. The fresh detached audit obtained exit 0 while Node executed an arbitrary-name state
 resolver, so CI run #30 and that audit are invalid for merge authorization.
 
+Candidate `b1e61a09beef00939feaedbfd224d37d0be15521` still downgraded
+`module.constructor` to an ordinary function value. The exact review payload called its static
+`_load` member with an absolute `__dirname` path, loaded `domain/src/index.cjs`, and executed the
+aliased `fold` resolver. The checker incorrectly exited 0, while Node's exit 0 confirmed the bypass
+was runtime-executable. CI run #32 and the earlier detached PASS are invalid for merge
+authorization.
+
 ## Remediation design
 
 - TypeScript AST extraction covers static imports/re-exports, import-equals, import types, dynamic
@@ -71,6 +79,9 @@ resolver, so CI run #30 and that audit are invalid for merge authorization.
   capability through their first static `constructor` access. `Object.getPrototypeOf` preserves
   either function-prototype or constructed-object capability, so a second constructor access cannot
   erase the dynamic-code path. Ordinary instance constructors remain non-codegen positive cases.
+- `module.constructor` additionally retains a dedicated Node Module-constructor capability. Its
+  static `_load` member becomes a loader capability instead of an ordinary unknown function
+  property; the review's non-static absolute target therefore fails closed before execution.
 - Relative, workspace-package, `package.json#imports`, `tsconfig.paths`, and `baseUrl` specifiers
   resolve to real source targets, including `.js` to `.ts` mapping and wildcard specificity.
   Conditional package targets and matched-but-unresolved TypeScript aliases fail closed.
@@ -97,7 +108,7 @@ resolver, so CI run #30 and that audit are invalid for merge authorization.
 
 ## Independent negative proof
 
-`tests/p02-001-boundaries.test.ts` now runs two positive and 103 negative fixture roots. The four
+`tests/p02-001-boundaries.test.ts` now runs two positive and 104 negative fixture roots. The four
 Owner-blocking cases, no-suffix root, compatibility-wrapper reachability, approved
 `operation-week-session` path, TypeScript path/baseUrl aliases, an unmanifested alias target,
 dynamic import, and non-static import cases require exit 1 and independently assert their intended
@@ -109,12 +120,15 @@ locally injected loader-like names and ordinary nested/custom constructors remai
 The five runtime-constructor-chain fixtures each exit 1 with exactly the dynamic-code diagnostic;
 their runtime forms cover `globalThis`, `process`, `module`, `Reflect`, and
 `Object.getPrototypeOf(Reflect)` without relying on a resolver name.
+The separate `module.constructor._load` fixture reproduces the formal-review payload, still exits 0
+when executed by Node 24.14.0, and now makes the checker exit 1 with exactly the non-static-loader
+diagnostic.
 
 After remediation:
 
-- focused boundary suite: 105/105 passed;
-- full `pnpm check`: 10 files / 136 tests passed, including Web and CLI builds;
-- directed regression: 8 files / 132 tests passed;
+- focused boundary suite: 106/106 passed;
+- full `pnpm check`: 10 files / 137 tests passed, including Web and CLI builds;
+- directed regression: 8 files / 133 tests passed;
 - both frozen state/replay hash pairs remained unchanged;
 - 1,000/1,000 batch runs completed with every failure/mismatch/violation count at zero;
 - P00/P01/P01-M1 evidence trees and manifest file hashes remained unchanged.

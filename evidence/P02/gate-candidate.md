@@ -27,5 +27,10 @@ found that runtime-object constructor chains could erase dynamic-code capability
 resolver. CI run #30 and every review tied to that SHA are historical only. The next candidate is
 formed as a normal descendant of that remote head and still requires fresh exact-SHA CI and audit.
 
+Candidate `b1e61a09beef00939feaedbfd224d37d0be15521` is also superseded: formal review found that
+`module.constructor._load(...)` could load and execute a domain state resolver while the boundary
+checker exited 0. CI run #32 and the earlier detached PASS are historical only. The next candidate
+must be a normal descendant of that remote head and requires fresh exact-SHA CI and audit.
+
 This is implementation-thread evidence for P02-001. It is not Gate B, Gate C, Gate D, or a P02
 completion decision. P02 gameplay, Match/V2 production contracts, and P02-002 remain unstarted.
