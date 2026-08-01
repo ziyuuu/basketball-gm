@@ -17,7 +17,7 @@
 | Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`                |
 | Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`                |
 | Engine version               | `0.1.2-p01-r2`                                            |
-| Current decision             | Merge 12-player amendment; first playable Site release at P04 |
+| Current decision             | 12-player amendment; first playable Site at P04          |
 | Current implementation Issue | GitHub #11 (`P02-002`, READY / NOT STARTED)               |
 
 ## Frozen baseline
