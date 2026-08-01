@@ -15,7 +15,7 @@ async function collectFiles(directory) {
   return files;
 }
 
-const allowedPhases = new Set(['P00', 'P01', 'P01-M1']);
+const allowedPhases = new Set(['P00', 'P01', 'P01-M1', 'P02']);
 const phaseFlagIndex = process.argv.indexOf('--phase');
 const requestedPhase = phaseFlagIndex >= 0 ? process.argv[phaseFlagIndex + 1] : undefined;
 if (phaseFlagIndex >= 0 && (!requestedPhase || !allowedPhases.has(requestedPhase))) {

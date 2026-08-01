@@ -1,0 +1,15 @@
+{
+  "command": "pnpm sim:batch -- --runs 1000 --seed-prefix p02-001-legacy --replay-samples 20",
+  "requestedRuns": 1000,
+  "completedRuns": 1000,
+  "failedRuns": 0,
+  "replaySamples": 20,
+  "replayMismatches": 0,
+  "calendarWeekViolations": 0,
+  "operationWeekViolations": 0,
+  "illegalTerminalStates": 0,
+  "averageMatches": 24,
+  "averageBudgetBalance": 208560,
+  "elapsedMilliseconds": 8649.06,
+  "failures": []
+}

@@ -3,11 +3,20 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "paths": {
+      "@sunny-court/application/legacy-p01": ["./packages/application/src/legacy-p01/index.ts"],
       "@sunny-court/application": ["./packages/application/src/index.ts"],
       "@sunny-court/content-schema": ["./packages/content-schema/src/index.ts"],
+      "@sunny-court/domain/legacy-p01": ["./packages/domain/src/legacy-p01/index.ts"],
       "@sunny-court/domain": ["./packages/domain/src/index.ts"],
+      "@sunny-court/persistence/legacy-p01": ["./packages/persistence/src/legacy-p01/index.ts"],
       "@sunny-court/persistence": ["./packages/persistence/src/index.ts"],
+      "@sunny-court/persistence-indexeddb/legacy-p01": [
+        "./packages/persistence-indexeddb/src/legacy-p01/index.ts"
+      ],
       "@sunny-court/persistence-indexeddb": ["./packages/persistence-indexeddb/src/index.ts"],
+      "@sunny-court/persistence-node/legacy-p01": [
+        "./packages/persistence-node/src/legacy-p01/index.ts"
+      ],
       "@sunny-court/persistence-node": ["./packages/persistence-node/src/index.ts"],
       "@sunny-court/ui-tokens": ["./packages/ui-tokens/src/index.ts"]
     }

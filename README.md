@@ -18,8 +18,11 @@ The T00 visual prototype is intentionally separate. This repository does not reu
 - P02-000 gameplay baseline v1.1 was Owner-approved on 2026-08-01.
 - P02 development plan v1.1 was Owner-approved on 2026-08-01 after its conditional audit items
   were incorporated.
-- No P02 gameplay implementation has started. The isolated `P01-M1` annual-grant integrity Issue
-  has an implementation candidate; independent Gate M1 and Owner confirmation remain required.
+- P01-M1 annual-grant integrity hardening merged through PR #7 at
+  `main@5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`; independent Gate #8 passed for its exact
+  candidate before merge.
+- P02-001 is the current implementation slice. It freezes ADRs and establishes the Legacy P01/V2
+  scaffold only; no P02 gameplay, Match contract, or V2 production state is implemented yet.
 
 The history is intentionally not rewritten. Baseline `32861501...` failed P01 because of event-ID
 integrity. R1 `6984260...` repaired those IDs but still failed P01 because annual grants were
@@ -37,8 +40,8 @@ independent review.
 the P02 player model, Model B, three classified match types, atomic week settlement, and deferred
 systems.
 
-Implementation now proceeds one dependency-cleared GitHub Issue and one PR at a time. It starts
-with `P01-M1` annual-grant integrity hardening, then `P02-001` architecture ADRs. P02-008 is split
+Implementation proceeds one dependency-cleared GitHub Issue and one PR at a time. P01-M1 is
+complete; P02-001 now establishes architecture ADRs and Legacy isolation. P02-008 remains split
 into an explicit V2 functional closure (`008A`) and a separate default-entry cutover (`008B`). The
 sequence does not jump directly to Model B or GameState V2.
 
