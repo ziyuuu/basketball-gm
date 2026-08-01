@@ -16,8 +16,11 @@
 - The first playable proof is a no-UI, no-API, three-school-year simulation.
 - P00/P01 engineering integrity is frozen at `main@6547fbf51b2a440fd9602eed82c869d70b1181e1`.
 - P01 attributes, training values, budget values, reputation values, automatic roster selection, and match model A are gameplay placeholders, not frozen design.
-- The current entry task is `P02-000`: design one coherent P01/P02 gameplay baseline before changing those placeholder rules or implementing model B.
+- The Owner-approved P02 gameplay authority is `docs/P02_GAMEPLAY_BASELINE.md` v1.1. Do not reinterpret it from the superseded vision or audit drafts.
+- The Owner-approved implementation authority is `docs/P02_DEVELOPMENT_PLAN.md` v1.1. Implement it through one unblocked GitHub Issue and one independently reviewable PR at a time, beginning with P01-M1.
 - P02 targets one simplified quarter/possession-chain match model. Model A remains an engineering regression baseline; model C is not an MVP implementation requirement.
+- P02 uses ten trainable abilities, a static body proxy, six fixed tendencies, at most one single-level archetype trait, fatigue, and individual chemistry. Morale, focus, pressure, injuries, pair relationships, and fixed five-player chemistry are not P02 state.
+- Values marked `[CALIBRATE]` may change only through the approved directional-scenario process. Calibration may not change the mechanic, phase boundary, record scope, or deferred-content decision.
 - Formal recruitment probabilities and roster sustainability remain P03. Detailed events, production UI, and later-phase systems must not be pulled into the P01/P02 gameplay baseline.
 - LLM and Agent implementations are out of scope before P10/P11. Do not add model SDKs or API-key environment variables.
 - The game is single-player, has no in-app purchases, no commercial gacha, no online competition, and deliberately allows manual saves, reloads, and save scumming.
@@ -25,6 +28,8 @@
 ## Workflow
 
 - Use the personal-project flow: task/fix branch -> CI and relevant checks -> independent audit for key phase or high-risk changes -> owner confirmation -> merge to `main`.
+- Keep one roadmap tracker, but create only the next dependency-cleared implementation Issue. One implementation Issue maps to one independently buildable and revertible PR; P02-008A and P02-008B remain separate.
+- Create Gate M1/B/C/D audit Issues only after an exact candidate SHA exists. An open downstream Issue never waives a dependency.
 - Never commit directly to `main`. Implementation-thread self-tests must not be represented as independent review.
 - Branch protection, a second GitHub account, and a formal GitHub approval record are not hard Gates for this repository.
 - Use task branches named `task/pXX-NNN-*` and remediation branches named `fix/pXX-NNN-*`.

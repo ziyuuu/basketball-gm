@@ -19,6 +19,17 @@ fix/pXX-NNN-short-description
 - Implementation-thread self-tests do not count as independent review.
 - Do not reuse a closed task branch for remediation.
 
+## Issues
+
+- Use one roadmap Issue to track the sequence, but create only the next implementation Issue whose dependencies are merged.
+- One implementation Issue corresponds to one buildable, reviewable, and revertible PR.
+- Every task Issue records its authority, exact `main` base SHA, dependencies, scope, non-scope,
+  acceptance, evidence, rollback, and stop conditions.
+- Create Gate M1/B/C/D Issues only after a stable candidate SHA exists. Gate C is one cumulative
+  decision over the P02-008A functional closure and P02-008B production cutover.
+- Implementation self-tests do not close a Gate, and an open downstream Issue does not waive an
+  unmet dependency.
+
 ## Required checks
 
 ```bash
@@ -30,7 +41,10 @@ This runs formatting, lint, type checking, package-boundary checks, tests, and p
 ## Change discipline
 
 - Keep the accepted P00/P01 engineering guarantees intact. P01 gameplay placeholders may change
-  only under the approved P01/P02 gameplay baseline.
+  only under the approved `docs/P02_GAMEPLAY_BASELINE.md` and an Owner-approved
+  `docs/P02_DEVELOPMENT_PLAN.md`.
+- A `[CALIBRATE]` change may tune a numeric value through the registered scenario suite; it may
+  not change a mechanic, record scope, phase assignment, or deferred-content boundary.
 - Do not treat P02 as a parallel-model research project. Implement one chosen MVP match model after
   the design baseline; retain model A only as an engineering regression reference.
 - Do not add a DOM, React, Node, storage-adapter, network, or model dependency to `packages/domain`.

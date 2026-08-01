@@ -1,10 +1,15 @@
 # P01/P02 Gameplay Baseline Brief
 
 > Task: `P02-000`
-> Status: `READY_FOR_DESIGN`
-> Implementation: prohibited until owner approval of the design baseline
+> Status: `COMPLETE / OWNER_APPROVED`
+> Owner approval: 2026-08-01
+> Formal deliverable: `docs/P02_GAMEPLAY_BASELINE.md`
+> Implementation: governed by Owner-approved `docs/P02_DEVELOPMENT_PLAN.md` v1.1; begins with P01-M1
 
 ## Purpose
+
+This file is the completed P02-000 task charter. It remains as historical scope and acceptance
+evidence; it is no longer the current instruction to start another design cycle.
 
 Turn the placeholder game rules created to prove P01 engineering into a coherent management-game
 slice, and design the P02 match experience that those management decisions feed into.
@@ -104,6 +109,8 @@ Do not hide a major choice inside vague wording such as “appropriately,” “
 
 ## Working method
 
+The following method was completed before Owner approval:
+
 1. Read the live repository, especially `AGENTS.md`, `PROJECT_LEDGER.md`, `SCOPE_LEDGER.md`, this
    brief, P01 schemas/constants/time/model-A code, and P01 evidence.
 2. Inspect the actual placeholder mechanics before proposing replacements.
@@ -114,6 +121,9 @@ Do not hide a major choice inside vague wording such as “appropriately,” “
 6. Revise the complete baseline after the interview; do not implement code or change GitHub.
 
 ## Acceptance
+
+The Owner accepted the formal deliverable on 2026-08-01. The checklist below remains the
+acceptance basis and must not be reopened by implementation convenience.
 
 The baseline is ready for owner approval when:
 

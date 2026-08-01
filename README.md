@@ -15,7 +15,11 @@ The T00 visual prototype is intentionally separate. This repository does not reu
 - P01-R2 candidate `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` passed the independent
   technical review used by this personal project and was merged through PR #1.
 - Engine version: `0.1.2-p01-r2`.
-- P02 is authorized to begin with gameplay design; no P02 gameplay implementation has started.
+- P02-000 gameplay baseline v1.1 was Owner-approved on 2026-08-01.
+- P02 development plan v1.1 was Owner-approved on 2026-08-01 after its conditional audit items
+  were incorporated.
+- No P02 gameplay implementation has started. The first authorized implementation is the isolated
+  `P01-M1` annual-grant integrity Issue.
 
 The history is intentionally not rewritten. Baseline `32861501...` failed P01 because of event-ID
 integrity. R1 `6984260...` repaired those IDs but still failed P01 because annual grants were
@@ -29,12 +33,18 @@ independent review.
 
 ## Current phase
 
-The next task is `P02-000`: produce a unified gameplay design baseline for the placeholder
-management rules introduced in P01 and the match gameplay required by P02. Design comes before new
-contracts or model-B implementation.
+`P02-000` is complete. The approved baseline defines the weekly team-plan plus match-slot loop,
+the P02 player model, Model B, three classified match types, atomic week settlement, and deferred
+systems.
 
-See [Project ledger](./docs/PROJECT_LEDGER.md) and
-[P01/P02 gameplay baseline brief](./docs/P01_P02_GAMEPLAY_BASELINE_BRIEF.md).
+Implementation now proceeds one dependency-cleared GitHub Issue and one PR at a time. It starts
+with `P01-M1` annual-grant integrity hardening, then `P02-001` architecture ADRs. P02-008 is split
+into an explicit V2 functional closure (`008A`) and a separate default-entry cutover (`008B`). The
+sequence does not jump directly to Model B or GameState V2.
+
+See [Project ledger](./docs/PROJECT_LEDGER.md),
+[approved P02 gameplay baseline](./docs/P02_GAMEPLAY_BASELINE.md), and
+[P02 development plan](./docs/P02_DEVELOPMENT_PLAN.md).
 
 ## Requirements
 
@@ -93,6 +103,8 @@ docs/
   EXECUTION_PLAN_P00_P01.md
   PROJECT_LEDGER.md
   P01_P02_GAMEPLAY_BASELINE_BRIEF.md
+  P02_GAMEPLAY_BASELINE.md
+  P02_DEVELOPMENT_PLAN.md
   adr/
 evidence/
   P00/
