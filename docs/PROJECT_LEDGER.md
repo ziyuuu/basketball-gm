@@ -4,19 +4,20 @@
 
 ## Current stage
 
-| Item                              | Status                                                  |
-| --------------------------------- | ------------------------------------------------------- |
-| P00                               | Complete                                                |
-| P01                               | Complete                                                |
-| P02-000                           | Complete; gameplay baseline Owner-approved 2026-08-01   |
-| P02 development plan              | v1.1 Owner-approved 2026-08-01                          |
-| P02 implementation                | Not started                                             |
-| P02-000 source documentation main | `2bdb373dfa7cf690be36a87871d447f4ebe7daf4`              |
-| Frozen P00/P01 code baseline      | `6547fbf51b2a440fd9602eed82c869d70b1181e1`              |
-| Accepted R2 candidate             | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`              |
-| Engine version                    | `0.1.2-p01-r2`                                          |
-| Current decision                  | Execute `P01-M1` through the first implementation Issue |
-| First authorized implementation   | `P01-M1 annual-grant integrity hardening`               |
+| Item                         | Status                                                |
+| ---------------------------- | ----------------------------------------------------- |
+| P00                          | Complete                                              |
+| P01                          | Complete                                              |
+| P02-000                      | Complete; gameplay baseline Owner-approved 2026-08-01 |
+| P02 development plan         | v1.1 Owner-approved 2026-08-01                        |
+| P01-M1                       | Implementation candidate; independent Gate pending    |
+| P02 implementation           | Not started                                           |
+| Approved docs merge on main  | `af5dcd1239a85f601c911629d7a12c9f4cdb170b`            |
+| Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`            |
+| Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`            |
+| Engine version               | `0.1.2-p01-r2`                                        |
+| Current decision             | Review P01-M1 candidate through independent Gate M1   |
+| Current implementation Issue | GitHub #6 (`P01-M1 annual-grant integrity hardening`) |
 
 ## Frozen baseline
 
@@ -43,10 +44,8 @@ These engineering guarantees are not reopened by gameplay design.
 
 ## Open risks
 
-- A crafted save may delete an annual-grant record or change grant amount/balance fields and pass
-  after recomputing hashes because the Schema does not yet require one canonical grant per settled
-  school year or validate its amount against `budget.annualGrant`. This is non-blocking for
-  gameplay design and must remain tracked.
+- The crafted annual-grant save risk has an implementation candidate and implementation evidence,
+  but it remains open until independent Gate M1 passes and the Owner confirms the merge.
 - The independent R2 decision has no standalone report or GitHub Review record in the repository.
   Do not invent either.
 - P01 gameplay values and model A are engineering fixtures, not fun or balance evidence.
@@ -69,9 +68,9 @@ migration, test, Issue/PR, Gate, and rollback details without changing the gamep
 
 ## Next executable task
 
-1. Create the P02 roadmap tracker and the single executable P01-M1 Issue.
-2. Implement P01-M1 on `fix/p01-m1-annual-grant-integrity` and form a stable candidate SHA.
-3. Run independent Gate M1; after `PASS` and Owner confirmation, merge its PR.
+1. Publish the stable P01-M1 candidate PR from `fix/p01-m1-annual-grant-integrity`.
+2. Create and run independent Gate M1 against that exact candidate SHA.
+3. After `PASS` and Owner confirmation, merge its PR.
 4. Only then create P02-001 from the resulting `main` SHA.
 
 No P02 gameplay code, public match contract, V2 Schema, or balancing fixture is authorized before

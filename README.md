@@ -18,8 +18,8 @@ The T00 visual prototype is intentionally separate. This repository does not reu
 - P02-000 gameplay baseline v1.1 was Owner-approved on 2026-08-01.
 - P02 development plan v1.1 was Owner-approved on 2026-08-01 after its conditional audit items
   were incorporated.
-- No P02 gameplay implementation has started. The first authorized implementation is the isolated
-  `P01-M1` annual-grant integrity Issue.
+- No P02 gameplay implementation has started. The isolated `P01-M1` annual-grant integrity Issue
+  has an implementation candidate; independent Gate M1 and Owner confirmation remain required.
 
 The history is intentionally not rewritten. Baseline `32861501...` failed P01 because of event-ID
 integrity. R1 `6984260...` repaired those IDs but still failed P01 because annual grants were
@@ -109,6 +109,7 @@ docs/
 evidence/
   P00/
   P01/
+  P01-M1/
 ```
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) and [SCOPE_LEDGER.md](./SCOPE_LEDGER.md) before changing package boundaries or phase scope.

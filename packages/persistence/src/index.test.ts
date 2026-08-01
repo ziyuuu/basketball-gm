@@ -34,6 +34,62 @@ function advance(original: GameSession, count: number, prefix: string): void {
   }
 }
 
+function annualGrant(envelope: SaveEnvelope, schoolYearIndex: number) {
+  const entry = envelope.snapshot.budget.ledger.find(
+    (candidate) =>
+      candidate.reason === 'ANNUAL_GRANT' && candidate.schoolYearIndex === schoolYearIndex,
+  );
+  if (!entry) throw new Error(`Expected annual grant for school year ${schoolYearIndex}.`);
+  return entry;
+}
+
+function resign(envelope: SaveEnvelope): void {
+  envelope.snapshotHash = stableHash(envelope.snapshot);
+  envelope.checksum = calculateSaveChecksum(envelope);
+}
+
+function reconcileLedgerAndResign(envelope: SaveEnvelope): void {
+  let balance = 0;
+  envelope.snapshot.budget.ledger.forEach((entry, index) => {
+    entry.sequence = index;
+    balance += entry.amount;
+    entry.balanceAfter = balance;
+  });
+  envelope.snapshot.budget.balance = balance;
+  resign(envelope);
+}
+
+function rejectionResult(
+  name: string,
+  envelope: SaveEnvelope,
+  expectedIssueMessage: string,
+  expectedIssuePathPrefix: string,
+) {
+  const gameStateResult = GameStateSchema.safeParse(envelope.snapshot);
+  const targetIssueFound =
+    !gameStateResult.success &&
+    gameStateResult.error.issues.some(
+      (issue) =>
+        issue.message.includes(expectedIssueMessage) &&
+        issue.path.join('.').startsWith(expectedIssuePathPrefix),
+    );
+  let restoreRejected = false;
+  try {
+    restoreSession(envelope);
+  } catch {
+    restoreRejected = true;
+  }
+  return {
+    name,
+    checksumRecomputed: envelope.checksum === calculateSaveChecksum(envelope),
+    snapshotHashRecomputed: envelope.snapshotHash === stableHash(envelope.snapshot),
+    gameStateRejected: !gameStateResult.success,
+    targetIssueFound,
+    envelopeRejected: !SaveEnvelopeSchema.safeParse(envelope).success,
+    restoreRejected,
+  };
+}
+
 describe('save envelope and memory repository', () => {
   it('round-trips state, RNG, and the accepted command tail', () => {
     const original = session('round-trip');
@@ -129,8 +185,8 @@ describe('save envelope and memory repository', () => {
     expect(playerLifecycleEventIds.every((eventId) => eventId.includes('-w80-'))).toBe(true);
   });
 
-  it('rejects checksummed saves with annual grants at weeks 41, 81, or 121', () => {
-    const original = session('future-ledger-save');
+  it('rejects re-signed grant and balance-chain attacks after checksum recomputation', () => {
+    const original = session('grant-ledger-attacks');
     advance(original, 120, 'week');
     const valid = createSaveEnvelope({
       session: original,
@@ -138,22 +194,239 @@ describe('save envelope and memory repository', () => {
       createdAt: '2026-07-31T00:00:00.000Z',
       committedAt: '2026-07-31T00:00:00.000Z',
     });
-    const invalidWeeks = [41, 81, 121];
+    const attacks: Array<{
+      name: string;
+      mutate: (envelope: SaveEnvelope) => void;
+      reconcile?: boolean;
+      expectedIssueMessage: string;
+      expectedIssuePathPrefix: string;
+    }> = [
+      {
+        name: 'delete a settled annual grant',
+        mutate: (envelope) => {
+          const index = envelope.snapshot.budget.ledger.findIndex(
+            (entry) => entry.reason === 'ANNUAL_GRANT' && entry.schoolYearIndex === 2,
+          );
+          if (index < 0) throw new Error('Expected the school-year-two grant.');
+          envelope.snapshot.budget.ledger.splice(index, 1);
+        },
+        reconcile: true,
+        expectedIssueMessage: 'School year 2 must contain 1 annual grant ledger entry',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'duplicate a settled annual grant',
+        mutate: (envelope) => {
+          const grant = annualGrant(envelope, 2);
+          const index = envelope.snapshot.budget.ledger.indexOf(grant);
+          envelope.snapshot.budget.ledger.splice(index + 1, 0, structuredClone(grant));
+        },
+        reconcile: true,
+        expectedIssueMessage: 'School year 2 must contain 1 annual grant ledger entry',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'move a grant to the wrong school year',
+        mutate: (envelope) => {
+          annualGrant(envelope, 1).schoolYearIndex = 2;
+        },
+        reconcile: true,
+        expectedIssueMessage: 'belongs to school year 1, not 2',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'move the school-year-one grant to week 41',
+        mutate: (envelope) => {
+          annualGrant(envelope, 1).absoluteWeek = 41;
+        },
+        reconcile: true,
+        expectedIssueMessage: 'Annual grant for school year 1 must be recorded at week 40',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'move the school-year-two grant to week 81',
+        mutate: (envelope) => {
+          annualGrant(envelope, 2).absoluteWeek = 81;
+        },
+        reconcile: true,
+        expectedIssueMessage: 'Annual grant for school year 2 must be recorded at week 80',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'move the school-year-three grant to week 121',
+        mutate: (envelope) => {
+          annualGrant(envelope, 3).absoluteWeek = 121;
+        },
+        reconcile: true,
+        expectedIssueMessage: 'expected number to be <=120',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'change one grant amount',
+        mutate: (envelope) => {
+          annualGrant(envelope, 1).amount += 1;
+        },
+        reconcile: true,
+        expectedIssueMessage: 'Annual grant for school year 1 must equal 50000',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'change every grant amount and the stored annualGrant field together',
+        mutate: (envelope) => {
+          envelope.snapshot.budget.annualGrant += 1;
+          envelope.snapshot.budget.ledger
+            .filter((entry) => entry.reason === 'ANNUAL_GRANT')
+            .forEach((entry) => {
+              entry.amount += 1;
+            });
+        },
+        reconcile: true,
+        expectedIssueMessage: 'P01 annual grant must equal the rules constant 50000',
+        expectedIssuePathPrefix: 'budget.annualGrant',
+      },
+      {
+        name: 'change the completed-school-year metric',
+        mutate: (envelope) => {
+          envelope.snapshot.metrics.completedSchoolYears = 2;
+        },
+        expectedIssueMessage: 'Completed-school-year metric must equal 3',
+        expectedIssuePathPrefix: 'metrics.completedSchoolYears',
+      },
+      {
+        name: 'change the team completed-school-year history',
+        mutate: (envelope) => {
+          envelope.snapshot.team.history.schoolYearsCompleted = 2;
+        },
+        expectedIssueMessage: 'Team school-year history must equal 3',
+        expectedIssuePathPrefix: 'team.history.schoolYearsCompleted',
+      },
+      {
+        name: 'change an internal balanceAfter while preserving the terminal balance',
+        mutate: (envelope) => {
+          const entry = envelope.snapshot.budget.ledger[2];
+          if (!entry) throw new Error('Expected at least three ledger entries.');
+          entry.balanceAfter += 1;
+        },
+        expectedIssueMessage: 'Budget ledger balance at position 2',
+        expectedIssuePathPrefix: 'budget.ledger.2.balanceAfter',
+      },
+      {
+        name: 'change the terminal budget balance while preserving the ledger',
+        mutate: (envelope) => {
+          envelope.snapshot.budget.balance += 1;
+        },
+        expectedIssueMessage: 'Budget ledger does not reconcile with current balance',
+        expectedIssuePathPrefix: 'budget',
+      },
+      {
+        name: 'change the initial grant and rebuild the full balance chain',
+        mutate: (envelope) => {
+          const initialGrant = envelope.snapshot.budget.ledger[0];
+          if (!initialGrant || initialGrant.reason !== 'INITIAL_GRANT') {
+            throw new Error('Expected the initial grant.');
+          }
+          initialGrant.amount += 1;
+        },
+        reconcile: true,
+        expectedIssueMessage: 'initial grant amount and resulting balance must both equal 100000',
+        expectedIssuePathPrefix: 'budget.ledger.0',
+      },
+      {
+        name: 'change only the initial grant balanceAfter',
+        mutate: (envelope) => {
+          const initialGrant = envelope.snapshot.budget.ledger[0];
+          if (!initialGrant || initialGrant.reason !== 'INITIAL_GRANT') {
+            throw new Error('Expected the initial grant.');
+          }
+          initialGrant.balanceAfter += 1;
+        },
+        expectedIssueMessage: 'initial grant amount and resulting balance must both equal 100000',
+        expectedIssuePathPrefix: 'budget.ledger.0',
+      },
+      {
+        name: 'duplicate the initial grant and rebuild the full balance chain',
+        mutate: (envelope) => {
+          const initialGrant = envelope.snapshot.budget.ledger[0];
+          if (!initialGrant || initialGrant.reason !== 'INITIAL_GRANT') {
+            throw new Error('Expected the initial grant.');
+          }
+          envelope.snapshot.budget.ledger.splice(1, 0, structuredClone(initialGrant));
+        },
+        reconcile: true,
+        expectedIssueMessage: 'exactly one initial grant as its first entry',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+      {
+        name: 'remove the initial-grant identity while preserving a nonnegative balance chain',
+        mutate: (envelope) => {
+          const initialGrant = envelope.snapshot.budget.ledger[0];
+          if (!initialGrant || initialGrant.reason !== 'INITIAL_GRANT') {
+            throw new Error('Expected the initial grant.');
+          }
+          initialGrant.reason = 'WEEKLY_OPERATIONS';
+          initialGrant.absoluteWeek = 1;
+        },
+        reconcile: true,
+        expectedIssueMessage: 'exactly one initial grant as its first entry',
+        expectedIssuePathPrefix: 'budget.ledger',
+      },
+    ];
 
-    invalidWeeks.forEach((absoluteWeek, grantIndex) => {
+    for (const attack of attacks) {
       const corrupted = structuredClone(valid) as SaveEnvelope;
-      const annualGrants = corrupted.snapshot.budget.ledger.filter(
-        (entry) => entry.reason === 'ANNUAL_GRANT',
-      );
-      const grant = annualGrants[grantIndex];
-      if (!grant) throw new Error(`Expected annual grant ${grantIndex + 1}.`);
-      grant.absoluteWeek = absoluteWeek;
-      corrupted.snapshotHash = stableHash(corrupted.snapshot);
-      corrupted.checksum = calculateSaveChecksum(corrupted);
+      attack.mutate(corrupted);
+      if (attack.reconcile) reconcileLedgerAndResign(corrupted);
+      else resign(corrupted);
 
-      expect(GameStateSchema.safeParse(corrupted.snapshot).success).toBe(false);
-      expect(SaveEnvelopeSchema.safeParse(corrupted).success).toBe(false);
-      expect(() => restoreSession(corrupted)).toThrow();
+      expect(
+        rejectionResult(
+          attack.name,
+          corrupted,
+          attack.expectedIssueMessage,
+          attack.expectedIssuePathPrefix,
+        ),
+      ).toEqual({
+        name: attack.name,
+        checksumRecomputed: true,
+        snapshotHashRecomputed: true,
+        gameStateRejected: true,
+        targetIssueFound: true,
+        envelopeRejected: true,
+        restoreRejected: true,
+      });
+    }
+  });
+
+  it('rejects a re-signed annual grant for a school year that has not settled', () => {
+    const original = session('future-grant-attack');
+    advance(original, 40, 'week');
+    const corrupted = createSaveEnvelope({
+      session: original,
+      saveId: 'year-one',
+      createdAt: '2026-07-31T00:00:00.000Z',
+      committedAt: '2026-07-31T00:00:00.000Z',
+    });
+    const futureGrant = structuredClone(annualGrant(corrupted, 1));
+    futureGrant.schoolYearIndex = 2;
+    futureGrant.absoluteWeek = 80;
+    corrupted.snapshot.budget.ledger.push(futureGrant);
+    reconcileLedgerAndResign(corrupted);
+
+    expect(
+      rejectionResult(
+        'future annual grant',
+        corrupted,
+        'School year 2 must contain 0 annual grant ledger entry',
+        'budget.ledger',
+      ),
+    ).toEqual({
+      name: 'future annual grant',
+      checksumRecomputed: true,
+      snapshotHashRecomputed: true,
+      gameStateRejected: true,
+      targetIssueFound: true,
+      envelopeRejected: true,
+      restoreRejected: true,
     });
   });
 });

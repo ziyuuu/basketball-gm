@@ -1,0 +1,26 @@
+{
+  "p01-evidence-001": {
+    "calendarWeeks": 120,
+    "operationWeeks": 96,
+    "examWeeks": 24,
+    "schoolYearsCompleted": 3,
+    "matches": 24,
+    "wins": 11,
+    "losses": 13,
+    "budgetBalance": 208560,
+    "stateHash": "fnv64:d2e562049e32562a",
+    "replayHash": "fnv64:321321f346df2bd9"
+  },
+  "r2-clean-gate": {
+    "calendarWeeks": 120,
+    "operationWeeks": 96,
+    "examWeeks": 24,
+    "schoolYearsCompleted": 3,
+    "matches": 24,
+    "wins": 5,
+    "losses": 19,
+    "budgetBalance": 208560,
+    "stateHash": "fnv64:8cbf99e1aa4068d4",
+    "replayHash": "fnv64:62713a07383cbf50"
+  }
+}

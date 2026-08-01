@@ -4,6 +4,8 @@ import {
   CALENDAR_WEEKS_PER_RUN,
   ENGINE_VERSION,
   OPERATION_WEEKS_PER_RUN,
+  P01_ANNUAL_GRANT,
+  P01_INITIAL_GRANT,
   RNG_STREAM_NAMES,
   SAVE_SCHEMA_VERSION,
   SCHOOL_YEARS_PER_RUN,
@@ -407,7 +409,33 @@ export const GameStateSchema = GameStateBaseSchema.superRefine((state, context) 
   }
 
   const weeksPerSchoolYear = TERMS_PER_SCHOOL_YEAR * WEEKS_PER_TERM;
+  const settledSchoolYears = Math.floor(state.metrics.resolvedCalendarWeeks / weeksPerSchoolYear);
+  if (state.metrics.completedSchoolYears !== settledSchoolYears) {
+    context.addIssue({
+      code: 'custom',
+      message: `Completed-school-year metric must equal ${settledSchoolYears} after ${state.metrics.resolvedCalendarWeeks} resolved weeks.`,
+      path: ['metrics', 'completedSchoolYears'],
+    });
+  }
+  if (state.team.history.schoolYearsCompleted !== settledSchoolYears) {
+    context.addIssue({
+      code: 'custom',
+      message: `Team school-year history must equal ${settledSchoolYears} after ${state.metrics.resolvedCalendarWeeks} resolved weeks.`,
+      path: ['team', 'history', 'schoolYearsCompleted'],
+    });
+  }
+  if (state.budget.annualGrant !== P01_ANNUAL_GRANT) {
+    context.addIssue({
+      code: 'custom',
+      message: `P01 annual grant must equal the rules constant ${P01_ANNUAL_GRANT}.`,
+      path: ['budget', 'annualGrant'],
+    });
+  }
+
+  const initialGrantIndexes: number[] = [];
+  const annualGrantIndexesBySchoolYear = new Map<number, number[]>();
   let previousLedgerWeek = 0;
+  let previousBalanceAfter: number | undefined;
   for (const [index, entry] of state.budget.ledger.entries()) {
     if (entry.sequence !== index) {
       context.addIssue({
@@ -418,10 +446,18 @@ export const GameStateSchema = GameStateBaseSchema.superRefine((state, context) 
     }
 
     if (entry.reason === 'INITIAL_GRANT') {
+      initialGrantIndexes.push(index);
       if (index !== 0 || entry.absoluteWeek !== 0 || entry.schoolYearIndex !== 1) {
         context.addIssue({
           code: 'custom',
           message: 'The initial grant must be the first ledger entry at school year 1, week 0.',
+          path: ['budget', 'ledger', index],
+        });
+      }
+      if (entry.amount !== P01_INITIAL_GRANT || entry.balanceAfter !== P01_INITIAL_GRANT) {
+        context.addIssue({
+          code: 'custom',
+          message: `The initial grant amount and resulting balance must both equal ${P01_INITIAL_GRANT}.`,
           path: ['budget', 'ledger', index],
         });
       }
@@ -451,6 +487,31 @@ export const GameStateSchema = GameStateBaseSchema.superRefine((state, context) 
       }
     }
 
+    if (entry.reason === 'ANNUAL_GRANT') {
+      const indexes = annualGrantIndexesBySchoolYear.get(entry.schoolYearIndex) ?? [];
+      indexes.push(index);
+      annualGrantIndexesBySchoolYear.set(entry.schoolYearIndex, indexes);
+      if (entry.amount !== P01_ANNUAL_GRANT) {
+        context.addIssue({
+          code: 'custom',
+          message: `Annual grant for school year ${entry.schoolYearIndex} must equal ${P01_ANNUAL_GRANT}.`,
+          path: ['budget', 'ledger', index, 'amount'],
+        });
+      }
+    }
+
+    if (index > 0 && previousBalanceAfter !== undefined) {
+      const expectedBalanceAfter = previousBalanceAfter + entry.amount;
+      if (entry.balanceAfter !== expectedBalanceAfter) {
+        context.addIssue({
+          code: 'custom',
+          message: `Budget ledger balance at position ${index} must equal the previous balance plus this entry amount.`,
+          path: ['budget', 'ledger', index, 'balanceAfter'],
+        });
+      }
+    }
+    previousBalanceAfter = entry.balanceAfter;
+
     if (entry.absoluteWeek < previousLedgerWeek) {
       context.addIssue({
         code: 'custom',
@@ -468,6 +529,26 @@ export const GameStateSchema = GameStateBaseSchema.superRefine((state, context) 
         code: 'custom',
         message: `Annual grant for school year ${entry.schoolYearIndex} must be recorded at week ${entry.schoolYearIndex * weeksPerSchoolYear}.`,
         path: ['budget', 'ledger', index, 'absoluteWeek'],
+      });
+    }
+  }
+
+  if (initialGrantIndexes.length !== 1 || initialGrantIndexes[0] !== 0) {
+    context.addIssue({
+      code: 'custom',
+      message: 'The budget ledger must contain exactly one initial grant as its first entry.',
+      path: ['budget', 'ledger'],
+    });
+  }
+
+  for (let schoolYearIndex = 1; schoolYearIndex <= SCHOOL_YEARS_PER_RUN; schoolYearIndex += 1) {
+    const indexes = annualGrantIndexesBySchoolYear.get(schoolYearIndex) ?? [];
+    const expectedCount = schoolYearIndex <= settledSchoolYears ? 1 : 0;
+    if (indexes.length !== expectedCount) {
+      context.addIssue({
+        code: 'custom',
+        message: `School year ${schoolYearIndex} must contain ${expectedCount} annual grant ledger entry after ${settledSchoolYears} settled school years; found ${indexes.length}.`,
+        path: ['budget', 'ledger'],
       });
     }
   }
