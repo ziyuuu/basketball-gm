@@ -21,7 +21,25 @@ const cliAllowedDomainValueImports = new Set([
   'stableHash',
 ]);
 const cliAllowedDomainTypeImports = new Set(['GameState']);
-const matchAllowedCoreImports = new Set(['nextRngState', 'seedFromText']);
+const matchAllowedCoreImports = new Set([
+  'canonicalizeV2',
+  'CanonicalV2Value',
+  'clampFixedPoint',
+  'compareUtf16CodeUnits',
+  'idHash',
+  'isCanonicalV2Hash',
+  'nextRngState',
+  'roundHalfUp',
+  'seedFromText',
+  'Uint32Source',
+]);
+const approvedCoreSources = new Set([
+  'packages/domain/src/core/canonical-v2.ts',
+  'packages/domain/src/core/fixed-point.ts',
+  'packages/domain/src/core/index.ts',
+  'packages/domain/src/core/rng-contract.ts',
+  'packages/domain/src/core/rng-primitives.ts',
+]);
 const dynamicLoaderSpecifiers = new Set(['module', 'node:module']);
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
 const legacyCompatibilityWrapperTargets = new Map([
@@ -1599,6 +1617,7 @@ function isLegacySpecifier(file, specifier) {
 
 function isV2Path(path) {
   const normalized = normalizedPath(path);
+  if (isCorePath(normalized)) return false;
   return (
     normalized.startsWith('packages/content-p02/src/') ||
     normalized.startsWith('packages/content-schema/src/p02/') ||
@@ -1624,9 +1643,12 @@ function isCorePath(path) {
 
 function isApprovedCoreSource(path, fixture) {
   const normalized = normalizedPath(path);
-  return fixture
-    ? /packages\/domain\/src\/core\/rng-primitives\.[^/]+$/.test(normalized)
-    : normalized === 'packages/domain/src/core/rng-primitives.ts';
+  if (fixture) {
+    return /packages\/domain\/src\/core\/(?:canonical-v2|fixed-point|rng-contract|rng-primitives)\.[^/]+$/.test(
+      normalized,
+    );
+  }
+  return approvedCoreSources.has(normalized);
 }
 
 function isMatchPath(path) {

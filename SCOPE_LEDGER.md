@@ -88,8 +88,12 @@ The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.2 is Owner-approved. Implementati
 only through its dependency-ordered Issue/PR flow, beginning with the non-gameplay P01-M1
 integrity task; no later P02 slice may bypass that dependency.
 
-P01-M1 merged through PR #7 after Gate #8 passed. P02-001 merged through PR #10. P02-002 exists as
-Issue #11 in `READY / NOT STARTED`; no P02-002 implementation branch or code has started.
+P01-M1 merged through PR #7 after Gate #8 passed. P02-001 merged through PR #10. The 12-player
+baseline/site-policy gate merged through PR #12 at
+`main@99c5b56a570d8e02b79dc006230f25c57c823595`. P02-002 Issue #11 is now `IN PROGRESS` from that
+exact base and is limited to pure Match contracts, deterministic identity, fixed-point, keyed RNG,
+effects, tests, and evidence. It does not start P02-003, a resolver, GameState V2, persistence,
+CLI/Web work, or a Site deployment.
 
 ## Approved P02 exclusions
 

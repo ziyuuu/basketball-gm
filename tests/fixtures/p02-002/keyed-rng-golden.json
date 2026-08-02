@@ -1,0 +1,35 @@
+{
+  "seed": [1, 2, 3, 4],
+  "draws": [
+    {
+      "period": 1,
+      "possessionIndex": 0,
+      "segmentIndex": 0,
+      "drawKind": "SHOT",
+      "localIndex": 0,
+      "hash": "sha256:d8351da516848404065904c1a0071e5f51d3fa2e166f5f5428f77c779427d568",
+      "uint64": "0xd8351da516848404",
+      "uint32": 3627359653
+    },
+    {
+      "period": 1,
+      "possessionIndex": 0,
+      "segmentIndex": 0,
+      "drawKind": "REBOUND",
+      "localIndex": 0,
+      "hash": "sha256:55b632c69728395280c8e43395fdf4254e5fe70d9a8cd4869d4ff32e2711ebbb",
+      "uint64": "0x55b632c697283952",
+      "uint32": 1438003910
+    },
+    {
+      "period": 2,
+      "possessionIndex": 7,
+      "segmentIndex": 3,
+      "drawKind": "SHOT",
+      "localIndex": 1,
+      "hash": "sha256:46a7fce14a3b4d57e28ac63fb6b7fda02de4b7880bd12ccaae99dba1814fa151",
+      "uint64": "0x46a7fce14a3b4d57",
+      "uint32": 1185414369
+    }
+  ]
+}

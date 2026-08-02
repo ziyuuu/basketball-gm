@@ -1,0 +1,23 @@
+{
+  "command": "pnpm sim:three-years -- --seed <seed> --json",
+  "p01-evidence-001": {
+    "status": "THREE_YEAR_COMPLETE",
+    "calendarWeeks": 120,
+    "operationWeeks": 96,
+    "examWeeks": 24,
+    "matches": 24,
+    "budgetBalance": 208560,
+    "stateHash": "fnv64:d2e562049e32562a",
+    "replayHash": "fnv64:321321f346df2bd9"
+  },
+  "r2-clean-gate": {
+    "status": "THREE_YEAR_COMPLETE",
+    "calendarWeeks": 120,
+    "operationWeeks": 96,
+    "examWeeks": 24,
+    "matches": 24,
+    "budgetBalance": 208560,
+    "stateHash": "fnv64:8cbf99e1aa4068d4",
+    "replayHash": "fnv64:62713a07383cbf50"
+  }
+}
