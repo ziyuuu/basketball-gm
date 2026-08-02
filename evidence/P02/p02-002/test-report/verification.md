@@ -16,6 +16,14 @@ This is implementation-thread verification, not an independent Gate or review de
 Before P02-002 edits, frozen install and `pnpm check` passed from the exact parent. The parent
 suite reported 10 test files / 137 tests; Web and CLI builds passed.
 
+Draft candidate `96b22b31184cf610029dfa6cff07d7adde15a20f` is superseded. Its three
+confirmed contract gaps were reproduced before remediation: a different valid Result
+classification, rehashed event coordinates/local sequence, and rehashed outside-roster/wrong-team
+event attribution all passed the old complete bundle Schema. The remediation tests recompute the
+affected event/fact hashes, event digest, and result identity before requiring rejection. The
+actor test/evidence wording was narrowed; this report does not claim detection of a fully rebuilt,
+internally consistent actor identity.
+
 ## P02-002 directed contracts
 
 ```bash
@@ -29,7 +37,7 @@ pnpm exec vitest run \
 ```
 
 Passes the Canonical V2, fixed-point, RNG, effect, protocol-chain, 12-player/scrimmage, and exact
-subpath-export coverage recorded in this evidence set: 6 test files / 28 tests.
+subpath-export coverage recorded in this evidence set: 6 test files / 32 tests.
 
 ## Full and Legacy verification
 
@@ -41,7 +49,7 @@ pnpm boundaries
 ```
 
 `pnpm check` passes formatting, ESLint, TypeScript, the existing boundary checker, the complete
-Vitest suite (16 test files / 165 tests), Web build, and CLI build.
+Vitest suite (16 test files / 169 tests), Web build, and CLI build.
 
 ```bash
 pnpm exec vitest run \
@@ -72,6 +80,6 @@ pnpm evidence:manifest -- --phase P02
 
 Observed final-run outcomes: both frozen state/replay pairs remain exact; the batch completed
 1,000/1,000 with zero failures, replay mismatches, calendar/operation violations, and illegal
-terminal states; its measured elapsed time was `8860.03 ms`. Historical P00/P01/P01-M1 manifests
+terminal states; its measured elapsed time was `8881.28 ms`. Historical P00/P01/P01-M1 manifests
 validate without modification; P02's current manifest is regenerated only after its current P02-002
 evidence is finalized.

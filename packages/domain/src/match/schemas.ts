@@ -1334,6 +1334,20 @@ export const MatchProtocolBundleSchema = z
     if (result.matchId !== input.matchId || result.matchInputHash !== input.matchInputHash) {
       addIssue(context, ['result'], 'Result must bind the exact immutable MatchInput identity.');
     }
+    if (result.matchKind !== input.matchKind) {
+      addIssue(
+        context,
+        ['result', 'matchKind'],
+        'Result match kind must equal the immutable MatchInput classification.',
+      );
+    }
+    if (result.recordScope !== input.recordScope) {
+      addIssue(
+        context,
+        ['result', 'recordScope'],
+        'Result record scope must equal the immutable MatchInput classification.',
+      );
+    }
     const anchorByHash = new Map<string, MatchAnchor>();
     const anchorIndexByHash = new Map<string, number>();
     const homeParticipantIds = new Set(input.homeTeam.players.map((player) => player.playerId));
@@ -1429,7 +1443,20 @@ export const MatchProtocolBundleSchema = z
       );
     }
 
+    const eventsByAnchorTransition = new Map<string, MatchEvent[]>();
+    const nextLocalEventSequenceBySegment = new Map<string, number>();
     for (const [index, event] of result.events.entries()) {
+      const segmentIdentity = `${event.period}:${event.possessionIndex}:${event.segmentIndex}`;
+      const expectedLocalEventSequence = nextLocalEventSequenceBySegment.get(segmentIdentity) ?? 0;
+      if (event.localEventSequence !== expectedLocalEventSequence) {
+        addIssue(
+          context,
+          ['result', 'events', index, 'localEventSequence'],
+          'Local event sequence must start at zero and advance densely within its segment.',
+        );
+      }
+      nextLocalEventSequenceBySegment.set(segmentIdentity, expectedLocalEventSequence + 1);
+
       if (!anchorByHash.has(event.previousAnchorHash) || !anchorByHash.has(event.nextAnchorHash)) {
         addIssue(
           context,
@@ -1443,7 +1470,7 @@ export const MatchProtocolBundleSchema = z
       const previousAnchor = anchorByHash.get(event.previousAnchorHash);
       const nextAnchor = anchorByHash.get(event.nextAnchorHash);
       if (
-        previousAnchorIndex >= nextAnchorIndex ||
+        nextAnchorIndex !== previousAnchorIndex + 1 ||
         (previousAnchor !== undefined && previousAnchor.eventCursor > event.cursor) ||
         (nextAnchor !== undefined && nextAnchor.eventCursor <= event.cursor)
       ) {
@@ -1452,6 +1479,130 @@ export const MatchProtocolBundleSchema = z
           ['result', 'events', index],
           'Event cursor must advance through this anchor chain.',
         );
+      }
+
+      if (
+        previousAnchor !== undefined &&
+        (event.period !== previousAnchor.period ||
+          event.possessionIndex !== previousAnchor.possession.possessionIndex ||
+          event.segmentIndex !== previousAnchor.possession.segmentIndex)
+      ) {
+        addIssue(
+          context,
+          ['result', 'events', index],
+          'Event period, possession, and segment must equal its previous Anchor coordinates.',
+        );
+      }
+
+      const transitionIdentity = `${event.previousAnchorHash}:${event.nextAnchorHash}`;
+      const transitionEvents = eventsByAnchorTransition.get(transitionIdentity) ?? [];
+      transitionEvents.push(event);
+      eventsByAnchorTransition.set(transitionIdentity, transitionEvents);
+
+      if (previousAnchor !== undefined) {
+        const possessionSide = previousAnchor.possession.side;
+        const oppositeSide = possessionSide === 'HOME' ? 'AWAY' : 'HOME';
+        const requirePlayerForSide = (
+          playerId: string,
+          side: z.infer<typeof MatchSideSchema>,
+          payloadPath: readonly (string | number)[],
+        ): void => {
+          const participantIds = side === 'HOME' ? homeParticipantIds : awayParticipantIds;
+          if (!participantIds.has(playerId)) {
+            addIssue(
+              context,
+              ['result', 'events', index, 'payload', ...payloadPath],
+              `Event player must be registered for the attributed ${side} team in this MatchInput.`,
+            );
+          }
+        };
+
+        switch (event.payload.type) {
+          case 'POSSESSION_STARTED':
+          case 'POSSESSION_ENDED':
+            if (event.payload.side !== possessionSide) {
+              addIssue(
+                context,
+                ['result', 'events', index, 'payload', 'side'],
+                'Possession event side must equal the previous Anchor possession side.',
+              );
+            }
+            break;
+          case 'TURNOVER':
+            requirePlayerForSide(event.payload.playerId, possessionSide, ['playerId']);
+            break;
+          case 'FOUL':
+            requirePlayerForSide(
+              event.payload.playerId,
+              event.payload.foulKind === 'OFFENSIVE' ? possessionSide : oppositeSide,
+              ['playerId'],
+            );
+            break;
+          case 'FREE_THROW':
+            requirePlayerForSide(event.payload.shooterId, possessionSide, ['shooterId']);
+            break;
+          case 'SHOT':
+            requirePlayerForSide(event.payload.shooterId, possessionSide, ['shooterId']);
+            break;
+          case 'REBOUND':
+            requirePlayerForSide(
+              event.payload.playerId,
+              event.payload.kind === 'OFFENSIVE' ? possessionSide : oppositeSide,
+              ['playerId'],
+            );
+            break;
+          case 'SCORE':
+            if (event.payload.side !== possessionSide) {
+              addIssue(
+                context,
+                ['result', 'events', index, 'payload', 'side'],
+                'Score side must equal the previous Anchor possession side.',
+              );
+            }
+            requirePlayerForSide(event.payload.playerId, event.payload.side, ['playerId']);
+            break;
+          case 'ASSIST':
+            requirePlayerForSide(event.payload.playerId, possessionSide, ['playerId']);
+            break;
+          case 'STEAL':
+          case 'BLOCK':
+            requirePlayerForSide(event.payload.playerId, oppositeSide, ['playerId']);
+            break;
+          case 'SUBSTITUTION':
+            requirePlayerForSide(event.payload.outPlayerId, event.payload.side, ['outPlayerId']);
+            requirePlayerForSide(event.payload.inPlayerId, event.payload.side, ['inPlayerId']);
+            break;
+          case 'CLOCK_ADVANCED':
+          case 'EFFECT_APPLIED':
+          case 'PERIOD_COMPLETED':
+          case 'MATCH_COMPLETED':
+            break;
+        }
+      }
+    }
+
+    for (let index = 0; index < anchors.length - 1; index += 1) {
+      const previousAnchor = anchors[index]!;
+      const nextAnchor = anchors[index + 1]!;
+      const transitionIdentity = `${previousAnchor.anchorHash}:${nextAnchor.anchorHash}`;
+      const transitionEvents = eventsByAnchorTransition.get(transitionIdentity) ?? [];
+      const expectedEventCount = nextAnchor.eventCursor - previousAnchor.eventCursor;
+      if (expectedEventCount < 0 || transitionEvents.length !== expectedEventCount) {
+        addIssue(
+          context,
+          ['anchors', index + 1, 'eventCursor'],
+          'Adjacent Anchor event cursors must equal the exact events committed by that transition.',
+        );
+        continue;
+      }
+      for (const [localIndex, event] of transitionEvents.entries()) {
+        if (event.cursor !== previousAnchor.eventCursor + localIndex) {
+          addIssue(
+            context,
+            ['result', 'events', event.cursor, 'cursor'],
+            'Transition events must densely cover the adjacent Anchor cursor range.',
+          );
+        }
       }
     }
     for (const [index, entry] of result.transcript.entries.entries()) {

@@ -223,20 +223,29 @@ function makeEvent(
   input: MatchInput,
   previousAnchor: MatchAnchor,
   nextAnchor: MatchAnchor,
+  options: Readonly<{
+    cursor?: number;
+    localEventSequence?: number;
+    eventType?: MatchEvent['eventType'];
+    payload?: MatchEvent['payload'];
+  }> = {},
 ): MatchEvent {
   const raw = {
     matchId: input.matchId,
     eventId: idHash('placeholder-event-id'),
     eventHash: idHash('placeholder-event-hash'),
-    cursor: 0,
+    cursor: options.cursor ?? 0,
     period: 1,
     possessionIndex: 0,
     segmentIndex: 0,
-    localEventSequence: 0,
-    eventType: 'MATCH_COMPLETED' as const,
+    localEventSequence: options.localEventSequence ?? 0,
+    eventType: options.eventType ?? ('MATCH_COMPLETED' as const),
     previousAnchorHash: previousAnchor.anchorHash,
     nextAnchorHash: nextAnchor.anchorHash,
-    payload: { type: 'MATCH_COMPLETED' as const, terminationReason: 'COMPLETED' as const },
+    payload: options.payload ?? {
+      type: 'MATCH_COMPLETED' as const,
+      terminationReason: 'COMPLETED' as const,
+    },
   };
   raw.eventId = deriveEventId(raw as MatchEvent);
   raw.eventHash = deriveMatchEventHash(raw as MatchEvent);
@@ -299,17 +308,33 @@ function makeValidBundle(fixtureSuffix = 'default') {
   const input = makeInput('OFFICIAL', fixtureSuffix);
   const firstAnchor = makeAnchor(input);
   const nextFragment = makeFragment(input, 'FAST');
-  const finalAnchor = makeAnchor(input, {
+  const acceptedCommandAnchor = makeAnchor(input, {
     previousAnchorHash: firstAnchor.anchorHash,
     localRevision: 1,
-    eventCursor: 1,
+    eventCursor: 0,
+    transcriptCursor: 1,
+    fragment: nextFragment,
+  });
+  const finalAnchor = makeAnchor(input, {
+    previousAnchorHash: acceptedCommandAnchor.anchorHash,
+    localRevision: 1,
+    eventCursor: 2,
     transcriptCursor: 1,
     fragment: nextFragment,
     status: 'COMPLETED',
   });
-  const event = makeEvent(input, firstAnchor, finalAnchor);
-  const fact = makeFact(input, event);
-  const entry = makeTranscriptEntry(input, firstAnchor, finalAnchor);
+  const events = [
+    makeEvent(input, acceptedCommandAnchor, finalAnchor, {
+      eventType: 'CLOCK_ADVANCED',
+      payload: { type: 'CLOCK_ADVANCED', seconds: 1 },
+    }),
+    makeEvent(input, acceptedCommandAnchor, finalAnchor, {
+      cursor: 1,
+      localEventSequence: 1,
+    }),
+  ];
+  const fact = makeFact(input, events[1]!);
+  const entry = makeTranscriptEntry(input, firstAnchor, acceptedCommandAnchor);
   const transcriptRaw = {
     matchId: input.matchId,
     genesisAnchorHash: firstAnchor.anchorHash,
@@ -324,10 +349,10 @@ function makeValidBundle(fixtureSuffix = 'default') {
     matchKind: input.matchKind,
     recordScope: input.recordScope,
     finalAnchor,
-    events: [event],
+    events,
     facts: [fact],
     transcript,
-    eventDigest: deriveEventDigest(input.matchId, [event]),
+    eventDigest: deriveEventDigest(input.matchId, events),
     terminationReason: 'COMPLETED' as const,
     matchResultId: idHash('placeholder-result-id'),
   };
@@ -335,9 +360,27 @@ function makeValidBundle(fixtureSuffix = 'default') {
   const result = MatchResultDraftSchema.parse(resultRaw);
   return {
     input,
-    anchors: [firstAnchor, finalAnchor],
+    anchors: [firstAnchor, acceptedCommandAnchor, finalAnchor],
     result,
   };
+}
+
+function rehashFirstEventAndResult(bundle: ReturnType<typeof makeValidBundle>): void {
+  const event = bundle.result.events[0]!;
+  const previousEventId = event.eventId;
+  event.eventId = deriveEventId(event);
+  event.eventHash = deriveMatchEventHash(event);
+
+  for (const fact of bundle.result.facts) {
+    fact.sourceEventIds = fact.sourceEventIds.map((eventId) =>
+      eventId === previousEventId ? event.eventId : eventId,
+    );
+    fact.factId = deriveFactId(fact);
+    fact.factHash = deriveMatchFactHash(fact);
+  }
+
+  bundle.result.eventDigest = deriveEventDigest(bundle.result.matchId, bundle.result.events);
+  bundle.result.matchResultId = deriveMatchResultId(bundle.result);
 }
 
 describe('P02-002 closed MatchInput contracts', () => {
@@ -408,7 +451,7 @@ describe('P02-002 closed match identity chain', () => {
     expect(MatchProtocolBundleSchema.safeParse(bundle).success).toBe(true);
   });
 
-  it('rejects swapped anchors, events, transcript actor/revision/boundary, and fragments even when outer hashes are recomputed', () => {
+  it('rejects swapped anchors/events and malformed transcript mutations at their validated layers', () => {
     const bundle = makeValidBundle();
     const otherBundle = makeValidBundle('other-match');
 
@@ -456,5 +499,96 @@ describe('P02-002 closed match identity chain', () => {
     );
     swappedFragment.result.matchResultId = deriveMatchResultId(swappedFragment.result);
     expect(MatchProtocolBundleSchema.safeParse(swappedFragment).success).toBe(false);
+  });
+
+  it('rejects a valid but different result classification after the result identity is recomputed', () => {
+    const mismatchedClassification = structuredClone(makeValidBundle());
+    mismatchedClassification.result.matchKind = 'FRIENDLY';
+    mismatchedClassification.result.recordScope = 'FRIENDLY_ARCHIVE';
+    mismatchedClassification.result.matchResultId = deriveMatchResultId(
+      mismatchedClassification.result,
+    );
+
+    expect(MatchResultDraftSchema.safeParse(mismatchedClassification.result).success).toBe(true);
+    expect(MatchProtocolBundleSchema.safeParse(mismatchedClassification).success).toBe(false);
+  });
+
+  it('rejects rehashed event coordinates and local sequence that disagree with the Anchor/cursor chain', () => {
+    const mutations: readonly ((event: MatchEvent) => void)[] = [
+      (event) => {
+        event.period += 1;
+      },
+      (event) => {
+        event.possessionIndex += 1;
+      },
+      (event) => {
+        event.segmentIndex += 1;
+      },
+      (event) => {
+        event.localEventSequence += 1;
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const inconsistentEvent = structuredClone(makeValidBundle());
+      mutate(inconsistentEvent.result.events[0]!);
+      rehashFirstEventAndResult(inconsistentEvent);
+
+      expect(MatchEventSchema.safeParse(inconsistentEvent.result.events[0]).success).toBe(true);
+      expect(MatchResultDraftSchema.safeParse(inconsistentEvent.result).success).toBe(true);
+      expect(MatchProtocolBundleSchema.safeParse(inconsistentEvent).success).toBe(false);
+    }
+  });
+
+  it('rejects a rehashed event that skips an intermediate Anchor in the cursor chain', () => {
+    const skippedAnchor = structuredClone(makeValidBundle());
+    skippedAnchor.result.events[0]!.previousAnchorHash = skippedAnchor.anchors[0]!.anchorHash;
+    rehashFirstEventAndResult(skippedAnchor);
+
+    expect(MatchEventSchema.safeParse(skippedAnchor.result.events[0]).success).toBe(true);
+    expect(MatchResultDraftSchema.safeParse(skippedAnchor.result).success).toBe(true);
+    expect(MatchProtocolBundleSchema.safeParse(skippedAnchor).success).toBe(false);
+  });
+
+  it('rejects rehashed event attribution outside the registered roster or on the wrong team', () => {
+    const registeredHomeShooter = structuredClone(makeValidBundle());
+    const registeredHomeShooterEvent = registeredHomeShooter.result.events[0]!;
+    registeredHomeShooterEvent.eventType = 'SHOT';
+    registeredHomeShooterEvent.payload = {
+      type: 'SHOT',
+      shooterId: registeredHomeShooter.input.homeTeam.registeredRosterIds[0]!,
+      zone: 'THREE_POINT',
+      made: false,
+    };
+    rehashFirstEventAndResult(registeredHomeShooter);
+    expect(MatchProtocolBundleSchema.safeParse(registeredHomeShooter).success).toBe(true);
+
+    const outsideRoster = structuredClone(makeValidBundle());
+    const outsideRosterEvent = outsideRoster.result.events[0]!;
+    outsideRosterEvent.eventType = 'SHOT';
+    outsideRosterEvent.payload = {
+      type: 'SHOT',
+      shooterId: 'not-registered-for-this-match',
+      zone: 'THREE_POINT',
+      made: false,
+    };
+    rehashFirstEventAndResult(outsideRoster);
+    expect(MatchEventSchema.safeParse(outsideRosterEvent).success).toBe(true);
+    expect(MatchResultDraftSchema.safeParse(outsideRoster.result).success).toBe(true);
+    expect(MatchProtocolBundleSchema.safeParse(outsideRoster).success).toBe(false);
+
+    const wrongTeam = structuredClone(makeValidBundle());
+    const wrongTeamEvent = wrongTeam.result.events[0]!;
+    wrongTeamEvent.eventType = 'SCORE';
+    wrongTeamEvent.payload = {
+      type: 'SCORE',
+      side: 'HOME',
+      playerId: wrongTeam.input.awayTeam.registeredRosterIds[0]!,
+      points: 2,
+    };
+    rehashFirstEventAndResult(wrongTeam);
+    expect(MatchEventSchema.safeParse(wrongTeamEvent).success).toBe(true);
+    expect(MatchResultDraftSchema.safeParse(wrongTeam.result).success).toBe(true);
+    expect(MatchProtocolBundleSchema.safeParse(wrongTeam).success).toBe(false);
   });
 });
