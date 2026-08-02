@@ -29,7 +29,7 @@ pnpm exec vitest run \
 ```
 
 Passes the Canonical V2, fixed-point, RNG, effect, protocol-chain, 12-player/scrimmage, and exact
-subpath-export coverage recorded in this evidence set: 6 test files / 27 tests.
+subpath-export coverage recorded in this evidence set: 6 test files / 28 tests.
 
 ## Full and Legacy verification
 
@@ -41,7 +41,7 @@ pnpm boundaries
 ```
 
 `pnpm check` passes formatting, ESLint, TypeScript, the existing boundary checker, the complete
-Vitest suite (16 test files / 164 tests), Web build, and CLI build.
+Vitest suite (16 test files / 165 tests), Web build, and CLI build.
 
 ```bash
 pnpm exec vitest run \
