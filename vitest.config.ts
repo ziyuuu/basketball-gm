@@ -21,6 +21,16 @@ export default defineConfig({
         ),
       },
       {
+        find: '@sunny-court/domain/core',
+        replacement: fileURLToPath(new URL('./packages/domain/src/core/index.ts', import.meta.url)),
+      },
+      {
+        find: '@sunny-court/domain/match',
+        replacement: fileURLToPath(
+          new URL('./packages/domain/src/match/index.ts', import.meta.url),
+        ),
+      },
+      {
         find: '@sunny-court/domain',
         replacement: fileURLToPath(new URL('./packages/domain/src/index.ts', import.meta.url)),
       },

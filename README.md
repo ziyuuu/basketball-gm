@@ -22,8 +22,11 @@ The T00 visual prototype is intentionally separate. This repository does not reu
   `main@5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`; independent Gate #8 passed for its exact
   candidate before merge.
 - P02-001 merged through PR #10 at `main@5eb947f81fe2600c3cd710999e1acc4d4718c63b`.
-- P02-002 exists as Issue #11 in `READY / NOT STARTED`; no P02 gameplay, Match contract, or V2
-  production state implementation has started yet.
+- The 12-player baseline/site-policy gate merged through PR #12 at
+  `main@99c5b56a570d8e02b79dc006230f25c57c823595`.
+- P02-002 Issue #11 is `IN PROGRESS` from that exact base. It adds only headless Match contracts,
+  deterministic identity, fixed-point and keyed-RNG primitives; no resolver, GameState V2, save,
+  CLI/Web entrypoint, Site deployment, or P02-003 implementation is included.
 
 The history is intentionally not rewritten. Baseline `32861501...` failed P01 because of event-ID
 integrity. R1 `6984260...` repaired those IDs but still failed P01 because annual grants were
@@ -42,9 +45,9 @@ the P02 player model, Model B, three classified match types, atomic week settlem
 systems.
 
 Implementation proceeds one dependency-cleared GitHub Issue and one PR at a time. P01-M1 and
-P02-001 are complete; P02-002 must start only after the 12-player v1.2 baseline amendment is on
-`main`. P02-008 remains split into an explicit V2 functional closure (`008A`) and a separate
-default-entry cutover (`008B`).
+P02-001 are complete; P02-002 started only after the 12-player v1.2 baseline amendment reached
+`main`, and P02-003 remains unstarted. P02-008 remains split into an explicit V2 functional
+closure (`008A`) and a separate default-entry cutover (`008B`).
 
 Legacy P01 still contains its frozen 22-player regression fixture and historical save/evidence
 hashes. That value is not the current product rule and must not be carried into P02; P02 uses a

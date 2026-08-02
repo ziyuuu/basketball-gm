@@ -12,13 +12,13 @@
 | P02 development plan         | v1.2 Owner-approved 2026-08-02                            |
 | P01-M1                       | Merged through PR #7; Gate #8 passed                      |
 | P02-001                      | Merged through PR #10                                     |
-| P02 gameplay implementation  | Not started                                               |
-| Current main                 | `5eb947f81fe2600c3cd710999e1acc4d4718c63b`                |
+| P02 gameplay implementation  | P02-002 contract-only work in progress; no resolver       |
+| Current main                 | `99c5b56a570d8e02b79dc006230f25c57c823595`                |
 | Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`                |
 | Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`                |
 | Engine version               | `0.1.2-p01-r2`                                            |
 | Current decision             | 12-player amendment; first playable Site at P04           |
-| Current implementation Issue | GitHub #11 (`P02-002`, READY / NOT STARTED)               |
+| Current implementation Issue | GitHub #11 (`P02-002`, IN PROGRESS)                       |
 
 ## Frozen baseline
 
@@ -83,10 +83,11 @@ migration, test, Issue/PR, Gate, and rollback details without changing the gamep
 
 ## Next executable task
 
-1. Merge the Owner-approved 12-player documentation amendment without changing Legacy P01 output.
-2. Keep P02-002 Issue #11 in `READY / NOT STARTED` until the amendment is merged.
-3. Start P02-002 only from the amended `main`, using the existing Issue/PR/Gate flow.
+1. Complete P02-002 from the amended `main` using the existing Issue/PR/Gate flow.
+2. Keep P02-002 limited to headless contracts, identity, fixed-point, keyed RNG, and effect
+   primitives; P02-003 remains unstarted.
+3. Keep the first playable Web deployment assigned to P04 and preserve Legacy P01 output.
 
-No P02 gameplay code, public match contract, V2 Schema, or balancing fixture has started. Legacy
-P01 remains an unchanged 22-player regression fixture; P02 implementation must use the 12-player
-rule. Downstream Issues are created progressively, not as prebuilt empty shells.
+P02-002 is the first public Match-contract implementation, not a gameplay resolver or V2 state
+cutover. Legacy P01 remains an unchanged 22-player regression fixture; P02 implementation uses
+the 12-player rule. Downstream Issues are created progressively, not as prebuilt empty shells.

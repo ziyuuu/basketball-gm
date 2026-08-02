@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./legacy-p01": "./src/legacy-p01/index.ts"
+    "./legacy-p01": "./src/legacy-p01/index.ts",
+    "./core": "./src/core/index.ts",
+    "./match": "./src/match/index.ts"
   },
   "dependencies": {
     "zod": "4.4.3"

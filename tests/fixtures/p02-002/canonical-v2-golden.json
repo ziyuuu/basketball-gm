@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "name": "ascii-object",
+      "input": {
+        "b": 2,
+        "a": 1
+      },
+      "equivalentInput": {
+        "a": 1,
+        "b": 2
+      },
+      "canonical": "{\"a\":1,\"b\":2}",
+      "hash": "sha256:43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+    },
+    {
+      "name": "utf16-code-unit-ordering",
+      "input": {
+        "😀": "grinning",
+        "中": "han",
+        "é": "combining",
+        "é": "precomposed",
+        "𐀀": "linear-b",
+        "ascii": "ascii",
+        "plain": {
+          "😀": 1,
+          "a": 2
+        }
+      },
+      "equivalentInput": {
+        "plain": {
+          "a": 2,
+          "😀": 1
+        },
+        "ascii": "ascii",
+        "𐀀": "linear-b",
+        "é": "precomposed",
+        "é": "combining",
+        "中": "han",
+        "😀": "grinning"
+      },
+      "canonical": "{\"ascii\":\"ascii\",\"é\":\"combining\",\"plain\":{\"a\":2,\"😀\":1},\"é\":\"precomposed\",\"中\":\"han\",\"𐀀\":\"linear-b\",\"😀\":\"grinning\"}",
+      "hash": "sha256:382452ed6841bd092cdbee039a7cbfd0237c28c8fc2d9e2b330ab1a0865f487f"
+    }
+  ]
+}
