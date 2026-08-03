@@ -25,6 +25,11 @@ import {
   type MatchTranscriptEntry,
 } from '../schemas.js';
 import { keyedDrawUnitInterval } from '../keyed-rng.js';
+import {
+  assertModelBBasketballInvariants,
+  assertModelBTransitionBasketballCausality,
+  assertModelBTransitionBasketballFacts,
+} from './basketball-invariants.js';
 import { createEmptyModelBBoxScore, reduceModelBEventPayloads } from './box-score.js';
 import {
   calculateLineupChemistryMilli,
@@ -214,6 +219,34 @@ export function buildModelBTranscript(session: ModelBSession): MatchTranscript {
   return MatchTranscriptSchema.parse(transcript);
 }
 
+export function predictModelBEventId(
+  session: ModelBSession,
+  transitionEventOffset: number,
+  eventType: MatchEvent['eventType'],
+): string {
+  if (!Number.isSafeInteger(transitionEventOffset) || transitionEventOffset < 0) {
+    throw new Error('A predicted transition event offset must be a non-negative safe integer.');
+  }
+  const anchor = session.anchors.at(-1);
+  if (anchor === undefined) throw new Error('A Model B session requires a current Anchor.');
+  const lastEvent = session.events.at(-1);
+  const existingInSegment =
+    lastEvent !== undefined &&
+    lastEvent.period === anchor.period &&
+    lastEvent.possessionIndex === anchor.possession.possessionIndex &&
+    lastEvent.segmentIndex === anchor.possession.segmentIndex
+      ? lastEvent.localEventSequence + 1
+      : 0;
+  return deriveEventId({
+    matchId: session.input.matchId,
+    period: anchor.period,
+    possessionIndex: anchor.possession.possessionIndex,
+    segmentIndex: anchor.possession.segmentIndex,
+    localEventSequence: existingInSegment + transitionEventOffset,
+    eventType,
+  });
+}
+
 function assertBoundaryMatchesAnchor(anchor: MatchAnchor): void {
   const boundary = anchor.controlBoundary;
   if (
@@ -353,6 +386,7 @@ export function assertModelBSessionInvariants(session: ModelBSession): void {
       throw new Error('A Model B transcript entry does not match its adjacent Anchor identities.');
     }
   }
+  assertModelBBasketballInvariants(session);
 }
 
 function assertModelBSessionTail(session: ModelBSession): void {
@@ -541,6 +575,7 @@ export function commitModelBTransition(
       payload,
     ),
   );
+  assertModelBTransitionBasketballCausality(transitionEvents);
   const transitionFacts = buildTransitionFacts(session, transitionEvents, draft.facts ?? []);
   const nextSession = freezeSession({
     input: session.input,
@@ -549,6 +584,7 @@ export function commitModelBTransition(
     facts: [...session.facts, ...transitionFacts],
     transcriptEntries: [...session.transcriptEntries],
   });
+  assertModelBTransitionBasketballFacts(nextSession, transitionEvents, transitionFacts);
   assertModelBSessionTail(nextSession);
   return nextSession;
 }

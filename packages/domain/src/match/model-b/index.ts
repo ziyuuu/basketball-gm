@@ -1,5 +1,7 @@
 export * from './box-score.js';
 export * from './behavior-selection.js';
+export * from './basketball-invariants.js';
+export * from './basketball-results.js';
 export * from './clock-rules.js';
 export * from './effective-values.js';
 export * from './probabilities.js';
