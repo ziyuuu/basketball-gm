@@ -24,7 +24,7 @@ import {
   type MatchTranscript,
   type MatchTranscriptEntry,
 } from '../schemas.js';
-import { keyedDrawInt } from '../keyed-rng.js';
+import { keyedDrawUnitInterval } from '../keyed-rng.js';
 import { createEmptyModelBBoxScore, reduceModelBEventPayloads } from './box-score.js';
 import {
   calculateLineupChemistryMilli,
@@ -81,6 +81,22 @@ function deepFreeze<T>(value: T): Readonly<T> {
   return value as Readonly<T>;
 }
 
+function freezeSession(input: {
+  input: MatchInput;
+  anchors: MatchAnchor[];
+  events: MatchEvent[];
+  facts: MatchFact[];
+  transcriptEntries: MatchTranscriptEntry[];
+}): ModelBSession {
+  return Object.freeze({
+    input: input.input,
+    anchors: Object.freeze(input.anchors),
+    events: Object.freeze(input.events),
+    facts: Object.freeze(input.facts),
+    transcriptEntries: Object.freeze(input.transcriptEntries),
+  });
+}
+
 function sidePlayers(input: MatchInput, side: 'HOME' | 'AWAY'): readonly MatchPlayerSnapshot[] {
   return side === 'HOME' ? input.homeTeam.players : input.awayTeam.players;
 }
@@ -114,24 +130,20 @@ function makeAnchor(input: Omit<MatchAnchor, 'anchorHash' | 'effectiveFragmentHa
     ...withFragmentHash,
     anchorHash: deriveMatchAnchorHash(withFragmentHash),
   };
-  return MatchAnchorSchema.parse(anchor);
+  return deepFreeze(MatchAnchorSchema.parse(anchor));
 }
 
 export function createModelBSession(rawInput: MatchInput): ModelBSession {
   const input = MatchInputSchema.parse(rawInput);
   const openingSide =
-    keyedDrawInt(
-      {
-        matchSeed: input.matchSeed,
-        period: 1,
-        possessionIndex: 0,
-        segmentIndex: 0,
-        drawKind: 'BALL_HANDLER',
-        localIndex: 0,
-      },
-      0,
-      1,
-    ) === 0
+    keyedDrawUnitInterval({
+      matchSeed: input.matchSeed,
+      period: 1,
+      possessionIndex: 0,
+      segmentIndex: 0,
+      drawKind: 'BALL_HANDLER',
+      localIndex: 0,
+    }) < 0.5
       ? 'HOME'
       : 'AWAY';
   const lineups = {
@@ -182,7 +194,13 @@ export function createModelBSession(rawInput: MatchInput): ModelBSession {
     controlBoundary,
     status: 'IN_PROGRESS',
   });
-  return deepFreeze({ input, anchors: [anchor], events: [], facts: [], transcriptEntries: [] });
+  return freezeSession({
+    input: deepFreeze(input),
+    anchors: [anchor],
+    events: [],
+    facts: [],
+    transcriptEntries: [],
+  });
 }
 
 export function buildModelBTranscript(session: ModelBSession): MatchTranscript {
@@ -337,6 +355,22 @@ export function assertModelBSessionInvariants(session: ModelBSession): void {
   }
 }
 
+function assertModelBSessionTail(session: ModelBSession): void {
+  const anchor = session.anchors.at(-1);
+  if (anchor === undefined) throw new Error('A Model B session requires a current Anchor.');
+  MatchAnchorSchema.parse(anchor);
+  assertBoundaryMatchesAnchor(anchor);
+  if (
+    anchor.eventCursor !== session.events.length ||
+    anchor.transcriptCursor !== session.transcriptEntries.length
+  ) {
+    throw new Error('Model B current Anchor cursors do not match committed arrays.');
+  }
+  if (session.events.at(-1)?.cursor !== session.events.length - 1 && session.events.length > 0) {
+    throw new Error('Model B event tail cursor is not dense.');
+  }
+}
+
 function buildTransitionEvent(
   previousAnchor: MatchAnchor,
   nextAnchorHash: string,
@@ -360,7 +394,7 @@ function buildTransitionEvent(
   } as MatchEvent;
   event.eventId = deriveEventId(event);
   event.eventHash = deriveMatchEventHash(event);
-  return MatchEventSchema.parse(event);
+  return deepFreeze(MatchEventSchema.parse(event));
 }
 
 function buildTransitionFacts(
@@ -388,7 +422,7 @@ function buildTransitionFacts(
     } as MatchFact;
     fact.factId = deriveFactId(fact);
     fact.factHash = deriveMatchFactHash(fact);
-    return MatchFactSchema.parse(fact);
+    return deepFreeze(MatchFactSchema.parse(fact));
   });
 }
 
@@ -396,7 +430,7 @@ export function commitModelBTransition(
   session: ModelBSession,
   draft: ModelBTransitionDraft,
 ): ModelBSession {
-  assertModelBSessionInvariants(session);
+  assertModelBSessionTail(session);
   if (draft.eventPayloads.length === 0) {
     throw new Error('An event transition must contain at least one event payload.');
   }
@@ -418,8 +452,27 @@ export function commitModelBTransition(
   if (nextPeriod > previousAnchor.period && reduced.periodClockSeconds !== 0) {
     throw new Error('A Model B period may only advance after its clock reaches zero.');
   }
+  if (
+    nextPeriod > previousAnchor.period &&
+    !draft.eventPayloads.some(
+      (payload) => payload.type === 'PERIOD_COMPLETED' && payload.period === previousAnchor.period,
+    )
+  ) {
+    throw new Error('Advancing a period requires its PERIOD_COMPLETED event.');
+  }
   const nextPossession = draft.nextPossession ?? { ...previousAnchor.possession };
   const status = draft.status ?? previousAnchor.status;
+  if (
+    status !== 'IN_PROGRESS' &&
+    !draft.eventPayloads.some(
+      (payload) =>
+        payload.type === 'MATCH_COMPLETED' &&
+        payload.terminationReason ===
+          (status === 'COMPLETED' ? 'COMPLETED' : 'FORFEIT_INSUFFICIENT_PLAYERS'),
+    )
+  ) {
+    throw new Error('A terminal Anchor requires its matching MATCH_COMPLETED event.');
+  }
   const periodClockSeconds =
     nextPeriod === previousAnchor.period
       ? reduced.periodClockSeconds
@@ -489,14 +542,14 @@ export function commitModelBTransition(
     ),
   );
   const transitionFacts = buildTransitionFacts(session, transitionEvents, draft.facts ?? []);
-  const nextSession = deepFreeze({
+  const nextSession = freezeSession({
     input: session.input,
     anchors: [...session.anchors, nextAnchor],
     events: [...session.events, ...transitionEvents],
     facts: [...session.facts, ...transitionFacts],
     transcriptEntries: [...session.transcriptEntries],
   });
-  assertModelBSessionInvariants(nextSession);
+  assertModelBSessionTail(nextSession);
   return nextSession;
 }
 
@@ -504,7 +557,7 @@ export function commitModelBAutomatedDecision(
   session: ModelBSession,
   draft: ModelBAutomatedDecisionDraft,
 ): ModelBSession {
-  assertModelBSessionInvariants(session);
+  assertModelBSessionTail(session);
   const previousAnchor = session.anchors.at(-1)!;
   if (previousAnchor.status !== 'IN_PROGRESS' || previousAnchor.controlBoundary === null) {
     throw new Error('Automated decisions require an in-progress control boundary.');
@@ -563,14 +616,14 @@ export function commitModelBAutomatedDecision(
         }
   ) as MatchTranscriptEntry;
   entry.transcriptEntryHash = deriveTranscriptEntryHash(entry);
-  const parsedEntry = MatchTranscriptEntrySchema.parse(entry);
-  const nextSession = deepFreeze({
+  const parsedEntry = deepFreeze(MatchTranscriptEntrySchema.parse(entry));
+  const nextSession = freezeSession({
     input: session.input,
     anchors: [...session.anchors, nextAnchor],
     events: [...session.events],
     facts: [...session.facts],
     transcriptEntries: [...session.transcriptEntries, parsedEntry],
   });
-  assertModelBSessionInvariants(nextSession);
+  assertModelBSessionTail(nextSession);
   return nextSession;
 }
