@@ -25,6 +25,7 @@ import {
   type MatchTranscriptEntry,
 } from '../schemas.js';
 import { keyedDrawUnitInterval } from '../keyed-rng.js';
+import { decrementEffectsAfterCommittedPossession } from '../effects.js';
 import {
   assertModelBBasketballInvariants,
   assertModelBTransitionBasketballCausality,
@@ -36,6 +37,12 @@ import {
   stableSortPlayersById,
   type MatchPlayerSnapshot,
 } from './effective-values.js';
+import {
+  assertModelBEffectApplication,
+  assertModelBTransitionPlayerEligibility,
+  recalculateModelBEligibleLineupState,
+  reduceModelBCommittedFatigue,
+} from './state-rules.js';
 
 export type ModelBSession = Readonly<{
   input: MatchInput;
@@ -59,8 +66,6 @@ export type ModelBTransitionDraft = Readonly<{
   status?: MatchAnchor['status'];
   controlBoundaryKind?: NonNullable<MatchAnchor['controlBoundary']>['kind'];
   effectiveFragment?: MatchAnchor['effectiveFragment'];
-  fatigueMilliByPlayer?: MatchAnchor['fatigueMilliByPlayer'];
-  chemistryWeightedMilli?: MatchAnchor['chemistryWeightedMilli'];
   pendingSubstitutionEntryHashes?: readonly string[];
 }>;
 
@@ -472,6 +477,11 @@ export function commitModelBTransition(
   if (previousAnchor.status !== 'IN_PROGRESS') {
     throw new Error('A completed Model B session cannot commit another event transition.');
   }
+  assertModelBTransitionPlayerEligibility(
+    previousAnchor,
+    draft.eventPayloads,
+    session.input.rules.foulOutLimit,
+  );
   const reduced = reduceModelBEventPayloads(
     previousAnchor,
     draft.eventPayloads,
@@ -526,6 +536,30 @@ export function commitModelBTransition(
     segmentIndex: nextPossession.segmentIndex,
   };
   const baseFragment = draft.effectiveFragment ?? previousAnchor.effectiveFragment;
+  assertModelBEffectApplication(
+    previousAnchor.effectiveFragment.effects,
+    baseFragment.effects,
+    draft.eventPayloads,
+  );
+  const possessionCommitted = draft.eventPayloads.some(
+    (payload) => payload.type === 'POSSESSION_ENDED',
+  );
+  const periodCompleted = draft.eventPayloads.some(
+    (payload) => payload.type === 'PERIOD_COMPLETED',
+  );
+  const effectsAfterPossession = decrementEffectsAfterCommittedPossession(
+    baseFragment.effects,
+    possessionCommitted,
+  );
+  const nextEffects = periodCompleted
+    ? effectsAfterPossession.filter((effect) => effect.duration.kind !== 'PERIOD_END')
+    : effectsAfterPossession;
+  const eligibleState = recalculateModelBEligibleLineupState(
+    session.input,
+    reduced.lineups,
+    reduced.roles,
+    reduced.boxScore,
+  );
   const effectiveFragment = {
     ...baseFragment,
     tactics: {
@@ -533,8 +567,8 @@ export function commitModelBTransition(
       away: { ...baseFragment.tactics.away },
     },
     lineups: reduced.lineups,
-    roles: reduced.roles,
-    effects: [...baseFragment.effects],
+    roles: eligibleState.roles,
+    effects: [...nextEffects],
   };
   const nextAnchor = makeAnchor({
     ...previousAnchor,
@@ -545,16 +579,16 @@ export function commitModelBTransition(
     possession: nextPossession,
     eventCursor: previousAnchor.eventCursor + draft.eventPayloads.length,
     lineups: reduced.lineups,
-    roles: reduced.roles,
+    roles: eligibleState.roles,
     pendingSubstitutionEntryHashes: [
       ...(draft.pendingSubstitutionEntryHashes ?? previousAnchor.pendingSubstitutionEntryHashes),
     ],
-    fatigueMilliByPlayer: {
-      ...(draft.fatigueMilliByPlayer ?? previousAnchor.fatigueMilliByPlayer),
-    },
-    chemistryWeightedMilli: {
-      ...(draft.chemistryWeightedMilli ?? previousAnchor.chemistryWeightedMilli),
-    },
+    fatigueMilliByPlayer: reduceModelBCommittedFatigue(
+      session.input,
+      previousAnchor,
+      draft.eventPayloads,
+    ),
+    chemistryWeightedMilli: eligibleState.chemistryWeightedMilli,
     boxScore: reduced.boxScore,
     effectiveFragment,
     controlBoundary,
@@ -598,8 +632,15 @@ export function commitModelBAutomatedDecision(
   if (previousAnchor.status !== 'IN_PROGRESS' || previousAnchor.controlBoundary === null) {
     throw new Error('Automated decisions require an in-progress control boundary.');
   }
+  const eligibleState = recalculateModelBEligibleLineupState(
+    session.input,
+    draft.effectiveFragment.lineups,
+    draft.effectiveFragment.roles,
+    previousAnchor.boxScore,
+  );
   const effectiveFragment = {
     ...draft.effectiveFragment,
+    roles: eligibleState.roles,
     effects: [...draft.effectiveFragment.effects],
   };
   const nextAnchor = makeAnchor({
@@ -609,6 +650,7 @@ export function commitModelBAutomatedDecision(
     localRevision: previousAnchor.localRevision + 1,
     lineups: effectiveFragment.lineups,
     roles: effectiveFragment.roles,
+    chemistryWeightedMilli: eligibleState.chemistryWeightedMilli,
     effectiveFragment,
   });
   const base = {

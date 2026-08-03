@@ -16,8 +16,6 @@ export type ModelBActiveSegmentDraft = Readonly<{
   facts?: readonly ModelBFactDraft[];
   resolution: ModelBSegmentResolution;
   effectiveFragment?: MatchAnchor['effectiveFragment'];
-  fatigueMilliByPlayer?: MatchAnchor['fatigueMilliByPlayer'];
-  chemistryWeightedMilli?: MatchAnchor['chemistryWeightedMilli'];
 }>;
 
 function oppositeSide(side: MatchAnchor['possession']['side']): 'HOME' | 'AWAY' {
@@ -154,12 +152,6 @@ export function commitModelBActiveSegment(
     ...(draft.effectiveFragment === undefined
       ? {}
       : { effectiveFragment: draft.effectiveFragment }),
-    ...(draft.fatigueMilliByPlayer === undefined
-      ? {}
-      : { fatigueMilliByPlayer: draft.fatigueMilliByPlayer }),
-    ...(draft.chemistryWeightedMilli === undefined
-      ? {}
-      : { chemistryWeightedMilli: draft.chemistryWeightedMilli }),
   });
 }
 

@@ -5,6 +5,11 @@ import { MODEL_B_BEHAVIOR_MATRIX_IDS, MODEL_B_PARAMETER_REGISTRY } from './regis
 import { MODEL_B_PASS_BEHAVIOR_IDS } from './behavior-selection.js';
 import { reduceModelBEventPayloads } from './box-score.js';
 import type { ModelBSession } from './session.js';
+import {
+  assertModelBTransitionPlayerEligibility,
+  recalculateModelBEligibleLineupState,
+  reduceModelBCommittedFatigue,
+} from './state-rules.js';
 
 function sameCanonical(left: unknown, right: unknown): boolean {
   return canonicalizeV2(left as CanonicalV2Value) === canonicalizeV2(right as CanonicalV2Value);
@@ -467,6 +472,11 @@ export function assertModelBBasketballInvariants(session: ModelBSession): void {
     const events =
       eventsByTransition.get(`${previousAnchor.anchorHash}:${nextAnchor.anchorHash}`) ?? [];
     assertModelBTransitionBasketballCausality(events);
+    assertModelBTransitionPlayerEligibility(
+      previousAnchor,
+      events.map(({ payload }) => payload),
+      session.input.rules.foulOutLimit,
+    );
     const reduced = reduceModelBEventPayloads(
       previousAnchor,
       events.map(({ payload }) => payload),
@@ -477,6 +487,30 @@ export function assertModelBBasketballInvariants(session: ModelBSession): void {
     }
     if (!sameCanonical(reduced.boxScore, nextAnchor.boxScore)) {
       throw new Error('Anchor box score must be the exact reduction of committed events.');
+    }
+    const eligibleState = recalculateModelBEligibleLineupState(
+      session.input,
+      events.length === 0 ? nextAnchor.lineups : reduced.lineups,
+      events.length === 0 ? nextAnchor.roles : reduced.roles,
+      reduced.boxScore,
+    );
+    if (
+      !sameCanonical(eligibleState.roles, nextAnchor.roles) ||
+      !sameCanonical(eligibleState.chemistryWeightedMilli, nextAnchor.chemistryWeightedMilli)
+    ) {
+      throw new Error('Anchor roles and chemistry must derive from the eligible lineup.');
+    }
+    if (
+      !sameCanonical(
+        reduceModelBCommittedFatigue(
+          session.input,
+          previousAnchor,
+          events.map(({ payload }) => payload),
+        ),
+        nextAnchor.fatigueMilliByPlayer,
+      )
+    ) {
+      throw new Error('Anchor fatigue must derive from committed clock-event time slices.');
     }
     if (
       nextAnchor.period === previousAnchor.period &&
