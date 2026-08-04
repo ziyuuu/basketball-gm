@@ -1,4 +1,5 @@
 export * from './box-score.js';
+export * from './analytics.js';
 export * from './behavior-selection.js';
 export * from './basketball-invariants.js';
 export * from './basketball-results.js';

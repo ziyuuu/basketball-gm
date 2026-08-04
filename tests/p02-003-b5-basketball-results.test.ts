@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   assertModelBSessionInvariants,
   buildModelBCreationFactDraft,
+  buildModelBDefensiveActionFactDraft,
   buildModelBDefensiveFoulResolution,
   buildModelBFreeThrowResolution,
+  buildModelBHelpDefenseResolution,
   buildModelBOffensiveFoulResolution,
   buildModelBPassResolution,
   buildModelBPossessionHandlerFactDraft,
@@ -12,6 +14,10 @@ import {
   buildModelBShotResolution,
   buildModelBTeamReboundFactDraft,
   buildModelBTurnoverResolution,
+  calculateModelBDefensiveBreakdownMetrics,
+  calculateModelBOpportunityLedger,
+  calculateModelBTacticExecutionMetrics,
+  commitModelBActiveSegment,
   commitModelBTransition,
   createModelBSession,
   predictModelBEventId,
@@ -58,6 +64,7 @@ describe('P02-003 B5 basketball result, fact and statistic chains', () => {
       receiverId: shooterId,
       turnoverProbabilityMilli: 0,
       pressuredClassificationProbabilityMilli: 0,
+      stealAttributionProbabilityMilli: 1_000,
     });
     const shot = buildModelBShotResolution(session, {
       transitionEventOffset: pass.eventPayloads.length,
@@ -156,6 +163,7 @@ describe('P02-003 B5 basketball result, fact and statistic chains', () => {
       receiverId,
       turnoverProbabilityMilli: 0,
       pressuredClassificationProbabilityMilli: 1_000,
+      stealAttributionProbabilityMilli: 1_000,
     });
     expect(success.drawKeys).toEqual([success.behaviorResultDrawKey]);
     expect(success.behaviorResultDrawKey).toMatchObject({
@@ -190,13 +198,14 @@ describe('P02-003 B5 basketball result, fact and statistic chains', () => {
       receiverId: failureSides.offense.players[1]!.playerId,
       turnoverProbabilityMilli: 1_000,
       pressuredClassificationProbabilityMilli: 1_000,
-      stealCandidate: { playerId: stealerId, attributionProbabilityMilli: 1_000 },
+      stealAttributionProbabilityMilli: 1_000,
     });
     expect(failure.eventPayloads.map(({ type }) => type)).toEqual([
       'CLOCK_ADVANCED',
       'TURNOVER',
       'STEAL',
     ]);
+    expect(failure.stealCandidateId).toBe(stealerId);
     expect(failure.facts).toHaveLength(0);
     expect(failure.drawKeys.map(({ drawKind }) => drawKind)).toEqual([
       'TURNOVER_OCCURRENCE',
@@ -369,7 +378,7 @@ describe('P02-003 B5 basketball result, fact and statistic chains', () => {
     expect(defenseSide).not.toBe(offenseSide);
   });
 
-  it('clears an assist candidate when the receiver performs a later autonomous creation', () => {
+  it('preserves the last-pass assist candidate across receiver CreationFact', () => {
     const session = createModelBSession(makeP02MatchInput({ rootSeed: 'assist-cleared' }));
     const { offenseSide, offense } = currentSides(session);
     const passerId = offense.players[0]!.playerId;
@@ -384,6 +393,7 @@ describe('P02-003 B5 basketball result, fact and statistic chains', () => {
       receiverId: shooterId,
       turnoverProbabilityMilli: 0,
       pressuredClassificationProbabilityMilli: 0,
+      stealAttributionProbabilityMilli: 1_000,
     });
     const shot = buildModelBShotResolution(session, {
       transitionEventOffset: 2,
@@ -393,31 +403,410 @@ describe('P02-003 B5 basketball result, fact and statistic chains', () => {
       makeProbabilityMilli: 1_000,
       assistCandidate: { playerId: passerId, attributionProbabilityMilli: 1_000 },
     });
+    const committed = commitModelBTransition(session, {
+      eventPayloads: [
+        ...pass.eventPayloads,
+        { type: 'CLOCK_ADVANCED', seconds: 1 },
+        ...shot.eventPayloads,
+      ],
+      facts: [
+        ...pass.facts,
+        buildModelBCreationFactDraft({
+          sourceEventIndexes: [1],
+          creatorId: shooterId,
+          beneficiaryId: shooterId,
+          behaviorId: 'DRIVE',
+          opportunityQualityDelta: 6_000,
+          defensiveResponse: 'CONTESTED',
+          period: 1,
+          possessionIndex: 0,
+          segmentIndex: 0,
+          nextBehaviorId: 'LAYUP',
+        }),
+      ],
+    });
+    expect(playerStats(committed, offenseSide, passerId).assists).toBe(1);
+    expect(committed.facts.some((fact) => fact.payload.type === 'CREATION')).toBe(true);
+  });
+
+  it('resolves HELPD only as SUCCESS/-6000 or NO_EFFECT/0 and never clears an assist', () => {
+    const session = createModelBSession(makeP02MatchInput({ rootSeed: 'helpd-success' }));
+    const { offenseSide, defenseSide, offense, defense } = currentSides(session);
+    const anchor = session.anchors.at(-1)!;
+    const passerId = offense.players[0]!.playerId;
+    const handlerId = offense.players[1]!.playerId;
+    const defenseLineup = anchor.lineups[defenseSide === 'HOME' ? 'home' : 'away'];
+    const help = buildModelBHelpDefenseResolution(session, {
+      transitionEventOffset: 0,
+      seconds: 1,
+      behaviorSelectionOrdinal: 4,
+      successProbabilityMilli: 1_000,
+      offenseSide,
+      defenseSide,
+      handlerId,
+      onBallDefenderId: defenseLineup.PG,
+      helperId: defenseLineup.C,
+    });
+    expect(help.result).toBe('SUCCESS');
+    expect(help.eventPayloads).toEqual([{ type: 'CLOCK_ADVANCED', seconds: 1 }]);
+    expect(help.drawKeys).toEqual([
+      {
+        matchSeed: session.input.matchSeed,
+        period: 1,
+        possessionIndex: 0,
+        segmentIndex: 0,
+        drawKind: 'DEFENSIVE_ACTION',
+        localIndex: 1_004,
+      },
+    ]);
+    expect(help.facts).toHaveLength(1);
+    expect(help.facts[0]!.payload).toMatchObject({
+      type: 'DEFENSIVE_ACTION',
+      behaviorId: 'HELPD',
+      result: 'SUCCESS',
+      opportunityQualityDelta: -6_000,
+      breakdownOpportunity: false,
+    });
+    const helped = commitModelBTransition(session, {
+      eventPayloads: help.eventPayloads,
+      facts: help.facts,
+    });
+    expect(
+      calculateModelBOpportunityLedger(helped.facts, { period: 1, possessionIndex: 0 }),
+    ).toMatchObject({
+      rawDeltaMilli: -6_000,
+      netPossessionDeltaMilli: -6_000,
+    });
+    expect(calculateModelBTacticExecutionMetrics(helped, defenseSide)).toEqual({
+      tacticExecutionOpportunities: 1,
+      successfulTacticExecutions: 1,
+      tacticExecutionRate: 1,
+    });
+    expect(
+      calculateModelBDefensiveBreakdownMetrics(helped, {
+        defenseSide,
+        opponentHalfCourtPossessions: 0,
+      }),
+    ).toEqual({
+      defensiveBreakdownOpportunityEvents: 0,
+      defensiveBreakdownEvents: 0,
+      defensiveBreakdownOpportunityRate: null,
+      defensiveBreakdownRate: null,
+    });
+
+    const noEffectSession = createModelBSession(makeP02MatchInput({ rootSeed: 'helpd-no-effect' }));
+    const noEffectSides = currentSides(noEffectSession);
+    const noEffectAnchor = noEffectSession.anchors.at(-1)!;
+    const noEffectDefenseLineup =
+      noEffectAnchor.lineups[noEffectSides.defenseSide === 'HOME' ? 'home' : 'away'];
+    const noEffect = buildModelBHelpDefenseResolution(noEffectSession, {
+      transitionEventOffset: 0,
+      seconds: 2,
+      behaviorSelectionOrdinal: 4,
+      successProbabilityMilli: 0,
+      offenseSide: noEffectSides.offenseSide,
+      defenseSide: noEffectSides.defenseSide,
+      handlerId: noEffectSides.offense.players[1]!.playerId,
+      onBallDefenderId: noEffectDefenseLineup.PG,
+      helperId: noEffectDefenseLineup.C,
+    });
+    expect(noEffect.facts[0]!.payload).toMatchObject({
+      result: 'NO_EFFECT',
+      opportunityQualityDelta: 0,
+      breakdownOpportunity: false,
+    });
+    const noEffectCommitted = commitModelBTransition(noEffectSession, {
+      eventPayloads: noEffect.eventPayloads,
+      facts: noEffect.facts,
+    });
+    expect(
+      calculateModelBTacticExecutionMetrics(noEffectCommitted, noEffectSides.defenseSide),
+    ).toEqual({
+      tacticExecutionOpportunities: 1,
+      successfulTacticExecutions: 0,
+      tacticExecutionRate: 0,
+    });
+
+    const pass = buildModelBPassResolution(session, {
+      transitionEventOffset: 0,
+      seconds: 1,
+      behaviorId: 'PASS',
+      behaviorSelectionOrdinal: 0,
+      passSequence: 0,
+      passerId,
+      receiverId: handlerId,
+      turnoverProbabilityMilli: 0,
+      pressuredClassificationProbabilityMilli: 0,
+      stealAttributionProbabilityMilli: 1_000,
+    });
+    const helpAfterPass = buildModelBHelpDefenseResolution(session, {
+      transitionEventOffset: 1,
+      seconds: 1,
+      behaviorSelectionOrdinal: 1,
+      successProbabilityMilli: 0,
+      offenseSide,
+      defenseSide,
+      handlerId,
+      onBallDefenderId: defenseLineup.PG,
+      helperId: defenseLineup.C,
+    });
+    const shot = buildModelBShotResolution(session, {
+      transitionEventOffset: 2,
+      shooterId: handlerId,
+      zone: 'INSIDE',
+      shotInstanceIndex: 0,
+      makeProbabilityMilli: 1_000,
+      assistCandidate: { playerId: passerId, attributionProbabilityMilli: 1_000 },
+    });
+    const assisted = commitModelBTransition(session, {
+      eventPayloads: [...pass.eventPayloads, ...helpAfterPass.eventPayloads, ...shot.eventPayloads],
+      facts: [...pass.facts, ...helpAfterPass.facts],
+    });
+    expect(playerStats(assisted, offenseSide, passerId).assists).toBe(1);
+    expect(assisted.facts.some((fact) => fact.payload.type === 'CREATION')).toBe(false);
+    expect(defense.players.some(({ playerId }) => playerId === help.helperId)).toBe(true);
+  });
+
+  it('consumes each opportunity source once and caps the possession ledger independently of display', () => {
+    const session = createModelBSession(makeP02MatchInput({ rootSeed: 'ledger' }));
+    const { offense } = currentSides(session);
+    const first = offense.players[0]!.playerId;
+    const second = offense.players[1]!.playerId;
+    const committed = commitModelBTransition(session, {
+      eventPayloads: [
+        { type: 'CLOCK_ADVANCED', seconds: 1 },
+        { type: 'CLOCK_ADVANCED', seconds: 1 },
+      ],
+      facts: [
+        buildModelBCreationFactDraft({
+          sourceEventIndexes: [0],
+          creatorId: first,
+          beneficiaryId: second,
+          behaviorId: 'DRIVE',
+          opportunityQualityDelta: 6_000,
+          defensiveResponse: 'CONTESTED',
+          period: 1,
+          possessionIndex: 0,
+          segmentIndex: 0,
+          nextBehaviorId: 'LAYUP',
+        }),
+        buildModelBCreationFactDraft({
+          sourceEventIndexes: [1],
+          creatorId: second,
+          beneficiaryId: second,
+          behaviorId: 'SCREEN',
+          opportunityQualityDelta: 6_000,
+          defensiveResponse: 'NONE',
+          period: 1,
+          possessionIndex: 0,
+          segmentIndex: 0,
+          nextBehaviorId: 'SPOTUP',
+        }),
+      ],
+    });
+    const ledger = calculateModelBOpportunityLedger(committed.facts, {
+      period: 1,
+      possessionIndex: 0,
+    });
+    expect(ledger).toMatchObject({ rawDeltaMilli: 12_000, netPossessionDeltaMilli: 6_000 });
+    expect(ledger.contributors).toHaveLength(2);
+    expect(() =>
+      calculateModelBOpportunityLedger([committed.facts[0]!, committed.facts[0]!], {
+        period: 1,
+        possessionIndex: 0,
+      }),
+    ).toThrow(/at most one opportunity ledger delta/);
+    expect(
+      calculateModelBTacticExecutionMetrics(committed, session.anchors[0]!.possession.side),
+    ).toEqual({
+      tacticExecutionOpportunities: 2,
+      successfulTacticExecutions: 2,
+      tacticExecutionRate: 1,
+    });
+  });
+
+  it('reports breakdown opportunities and realized results separately with null zero denominators', () => {
+    const makeBreakdown = (rootSeed: string, made: boolean, useHandler: boolean) => {
+      const session = createModelBSession(makeP02MatchInput({ rootSeed }));
+      const { offenseSide, defenseSide, offense } = currentSides(session);
+      const anchor = session.anchors.at(-1)!;
+      const defenseLineup = anchor.lineups[defenseSide === 'HOME' ? 'home' : 'away'];
+      const handlerId = offense.players[0]!.playerId;
+      const shooterId = useHandler ? handlerId : offense.players[1]!.playerId;
+      const eventPayloads = [
+        { type: 'CLOCK_ADVANCED', seconds: 1 } as const,
+        { type: 'SHOT', shooterId, zone: 'INSIDE', made } as const,
+        ...(made
+          ? ([{ type: 'SCORE', side: offenseSide, playerId: shooterId, points: 2 }] as const)
+          : []),
+      ];
+      return {
+        defenseSide,
+        session: commitModelBTransition(session, {
+          eventPayloads,
+          facts: [
+            buildModelBDefensiveActionFactDraft({
+              sourceEventIndexes: [0],
+              behaviorId: 'PRESS',
+              offenseSide,
+              defenseSide,
+              handlerId,
+              primaryDefenderId: defenseLineup.PG,
+              supportingDefenderIds: [],
+              result: 'FAILED_BREAKDOWN',
+              opportunityQualityDelta: 6_000,
+              breakdownOpportunity: true,
+              period: 1,
+              possessionIndex: 0,
+              segmentIndex: 0,
+            }),
+          ],
+        }),
+      };
+    };
+    const realized = makeBreakdown('breakdown-realized', true, true);
+    expect(
+      calculateModelBDefensiveBreakdownMetrics(realized.session, {
+        defenseSide: realized.defenseSide,
+        opponentHalfCourtPossessions: 2,
+      }),
+    ).toEqual({
+      defensiveBreakdownOpportunityEvents: 1,
+      defensiveBreakdownEvents: 1,
+      defensiveBreakdownOpportunityRate: 0.5,
+      defensiveBreakdownRate: 0.5,
+    });
+    for (const candidate of [
+      makeBreakdown('breakdown-miss', false, true),
+      makeBreakdown('breakdown-unrelated', true, false),
+    ]) {
+      expect(
+        calculateModelBDefensiveBreakdownMetrics(candidate.session, {
+          defenseSide: candidate.defenseSide,
+          opponentHalfCourtPossessions: 0,
+        }),
+      ).toEqual({
+        defensiveBreakdownOpportunityEvents: 1,
+        defensiveBreakdownEvents: 0,
+        defensiveBreakdownOpportunityRate: null,
+        defensiveBreakdownRate: null,
+      });
+    }
+  });
+
+  it('ends assist eligibility on a later pass or prior attempt while keeping one attribution draw', () => {
+    const session = createModelBSession(makeP02MatchInput({ rootSeed: 'assist-causal-end' }));
+    const { offense } = currentSides(session);
+    const passerId = offense.players[0]!.playerId;
+    const shooterId = offense.players[1]!.playerId;
+    const otherReceiverId = offense.players[2]!.playerId;
+    const firstPass = buildModelBPassResolution(session, {
+      transitionEventOffset: 0,
+      seconds: 1,
+      behaviorId: 'PASS',
+      behaviorSelectionOrdinal: 0,
+      passSequence: 0,
+      passerId,
+      receiverId: shooterId,
+      turnoverProbabilityMilli: 0,
+      pressuredClassificationProbabilityMilli: 0,
+      stealAttributionProbabilityMilli: 1_000,
+    });
+    const laterPass = buildModelBPassResolution(session, {
+      transitionEventOffset: 1,
+      seconds: 1,
+      behaviorId: 'PASS',
+      behaviorSelectionOrdinal: 1,
+      passSequence: 1,
+      passerId: shooterId,
+      receiverId: otherReceiverId,
+      turnoverProbabilityMilli: 0,
+      pressuredClassificationProbabilityMilli: 0,
+      stealAttributionProbabilityMilli: 1_000,
+    });
+    const shot = buildModelBShotResolution(session, {
+      transitionEventOffset: 2,
+      shooterId,
+      zone: 'INSIDE',
+      shotInstanceIndex: 0,
+      makeProbabilityMilli: 1_000,
+      assistCandidate: { playerId: passerId, attributionProbabilityMilli: 1_000 },
+    });
+    expect(shot.drawKeys.filter(({ drawKind }) => drawKind === 'ASSIST_ATTRIBUTION')).toHaveLength(
+      1,
+    );
     expect(() =>
       commitModelBTransition(session, {
         eventPayloads: [
-          ...pass.eventPayloads,
-          { type: 'CLOCK_ADVANCED', seconds: 1 },
+          ...firstPass.eventPayloads,
+          ...laterPass.eventPayloads,
           ...shot.eventPayloads,
         ],
-        facts: [
-          ...pass.facts,
-          buildModelBCreationFactDraft({
-            sourceEventIndexes: [1],
-            creatorId: shooterId,
-            beneficiaryId: shooterId,
-            behaviorId: 'DRIVE',
-            opportunityQualityDelta: 6_000,
-            defensiveResponse: 'CONTESTED',
-            period: 1,
-            possessionIndex: 0,
-            segmentIndex: 0,
-            nextBehaviorId: 'LAYUP',
-          }),
-        ],
+        facts: [...firstPass.facts, ...laterPass.facts],
       }),
-    ).toThrow(/autonomous/);
-    expect(session.anchors.at(-1)!.score[offenseSide === 'HOME' ? 'home' : 'away']).toBe(0);
+    ).toThrow(/last legal pass/);
+
+    const shotAfterAttempt = buildModelBShotResolution(session, {
+      transitionEventOffset: 2,
+      shooterId,
+      zone: 'MID_RANGE',
+      shotInstanceIndex: 1,
+      makeProbabilityMilli: 1_000,
+      assistCandidate: { playerId: passerId, attributionProbabilityMilli: 1_000 },
+    });
+    expect(() =>
+      commitModelBTransition(session, {
+        eventPayloads: [
+          ...firstPass.eventPayloads,
+          { type: 'FREE_THROW', shooterId, made: false },
+          ...shotAfterAttempt.eventPayloads,
+        ],
+        facts: firstPass.facts,
+      }),
+    ).toThrow(/candidate ended/);
+
+    const shotAfterTurnover = buildModelBShotResolution(session, {
+      transitionEventOffset: 2,
+      shooterId,
+      zone: 'MID_RANGE',
+      shotInstanceIndex: 2,
+      makeProbabilityMilli: 1_000,
+      assistCandidate: { playerId: passerId, attributionProbabilityMilli: 1_000 },
+    });
+    expect(() =>
+      commitModelBTransition(session, {
+        eventPayloads: [
+          ...firstPass.eventPayloads,
+          {
+            type: 'TURNOVER',
+            playerId: shooterId,
+            turnoverKind: 'UNFORCED_DEAD_BALL',
+          },
+          ...shotAfterTurnover.eventPayloads,
+        ],
+        facts: firstPass.facts,
+      }),
+    ).toThrow(/candidate ended/);
+
+    const passed = commitModelBActiveSegment(session, {
+      eventPayloads: firstPass.eventPayloads,
+      facts: firstPass.facts,
+      resolution: 'SAME_SIDE_DEAD_BALL',
+    });
+    const shotAfterSegment = buildModelBShotResolution(passed, {
+      transitionEventOffset: 1,
+      shooterId,
+      zone: 'INSIDE',
+      shotInstanceIndex: 3,
+      makeProbabilityMilli: 1_000,
+      assistCandidate: { playerId: passerId, attributionProbabilityMilli: 1_000 },
+    });
+    expect(() =>
+      commitModelBActiveSegment(passed, {
+        eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 1 }, ...shotAfterSegment.eventPayloads],
+        resolution: 'POSSESSION_CHANGE',
+      }),
+    ).toThrow(/last legal pass/);
   });
 
   it('rejects malformed fact attribution atomically and enforces the CreationFact event cap', () => {

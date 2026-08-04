@@ -3,6 +3,8 @@ import { keyedDrawInt, keyedDrawUint64, type MatchDrawKey } from '../keyed-rng.j
 import type { MatchEvent } from '../schemas.js';
 import {
   deriveModelBBoxoutActor,
+  deriveModelBPassInterceptionCandidate,
+  modelBDefenseExecutionLocalIndex,
   modelBDefensiveFoulLocalIndex,
   modelBOffensiveFoulLocalIndex,
   modelBPassResultDrawKey,
@@ -18,6 +20,7 @@ import {
   type ModelBBehaviorId,
 } from './registries.js';
 import { predictModelBEventId, type ModelBFactDraft, type ModelBSession } from './session.js';
+import { eligibleModelBLineupPlayerIds } from './state-rules.js';
 
 export type ModelBResolutionDraft = Readonly<{
   eventPayloads: readonly MatchEvent['payload'][];
@@ -195,6 +198,63 @@ export function buildModelBDefensiveActionFactDraft(
   });
 }
 
+export type ModelBHelpDefenseResolution = ModelBResolutionDraft &
+  Readonly<{ result: 'SUCCESS' | 'NO_EFFECT'; helperId: string }>;
+
+export function buildModelBHelpDefenseResolution(
+  session: ModelBSession,
+  input: Readonly<{
+    transitionEventOffset: number;
+    seconds: number;
+    behaviorSelectionOrdinal: number;
+    successProbabilityMilli: number;
+    offenseSide: 'HOME' | 'AWAY';
+    defenseSide: 'HOME' | 'AWAY';
+    handlerId: string;
+    onBallDefenderId: string;
+    helperId: string;
+  }>,
+): ModelBHelpDefenseResolution {
+  assertTransitionOffset(input.transitionEventOffset);
+  if (!Number.isSafeInteger(input.seconds) || input.seconds < 1) {
+    throw new Error('HELPD must consume at least one second.');
+  }
+  const context = currentContext(session);
+  const executionKey = withDrawKind(
+    context,
+    'DEFENSIVE_ACTION',
+    modelBDefenseExecutionLocalIndex(input.behaviorSelectionOrdinal),
+  );
+  const successful = drawOccurs(executionKey, input.successProbabilityMilli);
+  const result = successful ? ('SUCCESS' as const) : ('NO_EFFECT' as const);
+  const opportunityQualityDelta = successful
+    ? MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY.helpd.successfulDeltaMilli
+    : MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY.helpd.noEffectDeltaMilli;
+  return Object.freeze({
+    eventPayloads: Object.freeze([{ type: 'CLOCK_ADVANCED', seconds: input.seconds } as const]),
+    facts: Object.freeze([
+      buildModelBDefensiveActionFactDraft({
+        sourceEventIndexes: [input.transitionEventOffset],
+        behaviorId: 'HELPD',
+        offenseSide: input.offenseSide,
+        defenseSide: input.defenseSide,
+        handlerId: input.handlerId,
+        primaryDefenderId: input.onBallDefenderId,
+        supportingDefenderIds: [input.helperId],
+        result,
+        opportunityQualityDelta,
+        breakdownOpportunity: false,
+        period: context.period,
+        possessionIndex: context.possessionIndex,
+        segmentIndex: context.segmentIndex,
+      }),
+    ]),
+    drawKeys: Object.freeze([executionKey]),
+    result,
+    helperId: input.helperId,
+  });
+}
+
 export function buildModelBPassFactDraft(
   input: Readonly<{
     sourceEventIndexes: readonly number[];
@@ -351,6 +411,7 @@ export type ModelBPassResolution = ModelBResolutionDraft &
     turnoverKind: 'PRESSURED_LIVE_BALL' | 'UNFORCED_DEAD_BALL' | null;
     stealOccurred: boolean;
     nextHandlerPlayerId: string | null;
+    stealCandidateId: string;
     behaviorResultDrawKey: MatchDrawKey;
   }>;
 
@@ -366,7 +427,7 @@ export function buildModelBPassResolution(
     receiverId: string;
     turnoverProbabilityMilli: number;
     pressuredClassificationProbabilityMilli: number;
-    stealCandidate?: Readonly<{ playerId: string; attributionProbabilityMilli: number }>;
+    stealAttributionProbabilityMilli: number;
   }>,
 ): ModelBPassResolution {
   assertTransitionOffset(input.transitionEventOffset);
@@ -376,6 +437,14 @@ export function buildModelBPassResolution(
   if (input.passerId === input.receiverId) {
     throw new Error('A PASS behavior cannot target its current passer.');
   }
+  assertProbabilityMilli(
+    input.pressuredClassificationProbabilityMilli,
+    'PASS pressured classification probability',
+  );
+  assertProbabilityMilli(
+    input.stealAttributionProbabilityMilli,
+    'PASS steal attribution probability',
+  );
   const context = currentContext(session);
   const behaviorResultDrawKey = modelBPassResultDrawKey(
     context,
@@ -383,16 +452,31 @@ export function buildModelBPassResolution(
     input.behaviorSelectionOrdinal,
   );
   const clockPayload = { type: 'CLOCK_ADVANCED' as const, seconds: input.seconds };
+  const anchor = session.anchors.at(-1)!;
+  const defenseSide = anchor.possession.side === 'HOME' ? 'AWAY' : 'HOME';
+  const defenseTeam = defenseSide === 'HOME' ? session.input.homeTeam : session.input.awayTeam;
+  const eligibleIds = new Set(
+    eligibleModelBLineupPlayerIds(anchor, defenseSide, session.input.rules.foulOutLimit),
+  );
+  const stealCandidate = deriveModelBPassInterceptionCandidate({
+    currentLineup: anchor.lineups[defenseSide === 'HOME' ? 'home' : 'away'],
+    candidates: defenseTeam.players.filter(({ playerId }) => eligibleIds.has(playerId)),
+  });
+  if (stealCandidate === null) {
+    throw new Error('A PASS resolution requires one eligible interception candidate.');
+  }
   const turnover = buildModelBTurnoverResolution(session, {
     transitionEventOffset: input.transitionEventOffset + 1,
     handlerPlayerId: input.passerId,
     behaviorSelectionOrdinal: input.behaviorSelectionOrdinal,
     occurrenceProbabilityMilli: input.turnoverProbabilityMilli,
     pressuredClassificationProbabilityMilli: input.pressuredClassificationProbabilityMilli,
-    ...(input.stealCandidate === undefined ? {} : { stealCandidate: input.stealCandidate }),
+    stealCandidate: {
+      playerId: stealCandidate.playerId,
+      attributionProbabilityMilli: input.stealAttributionProbabilityMilli,
+    },
   });
   if (!turnover.occurred) {
-    const anchor = session.anchors.at(-1)!;
     return Object.freeze({
       eventPayloads: Object.freeze([clockPayload]),
       facts: Object.freeze([
@@ -411,6 +495,7 @@ export function buildModelBPassResolution(
       turnoverKind: null,
       stealOccurred: false,
       nextHandlerPlayerId: input.receiverId,
+      stealCandidateId: stealCandidate.playerId,
       behaviorResultDrawKey,
     });
   }
@@ -422,6 +507,7 @@ export function buildModelBPassResolution(
     turnoverKind: turnover.turnoverKind,
     stealOccurred: turnover.stealOccurred,
     nextHandlerPlayerId: null,
+    stealCandidateId: stealCandidate.playerId,
     behaviorResultDrawKey,
   });
 }

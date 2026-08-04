@@ -144,15 +144,6 @@ export function assertModelBTransitionBasketballCausality(
   }
 }
 
-const AUTONOMOUS_ASSIST_BREAK_BEHAVIORS = new Set([
-  'DRIVE',
-  'SHAKE',
-  'ISO',
-  'STEP_BACK',
-  'POSTUP',
-  'HIGH_POST_CREATION',
-]);
-
 const CREATION_FACT_BEHAVIORS = new Set([
   'DRIVE',
   'SHAKE',
@@ -188,6 +179,7 @@ function assertAssistFactCausality(
         source === undefined ||
         source.period !== shot.period ||
         source.possessionIndex !== shot.possessionIndex ||
+        source.segmentIndex !== shot.segmentIndex ||
         source.cursor >= shot.cursor
       ) {
         return [];
@@ -207,27 +199,16 @@ function assertAssistFactCausality(
     ) {
       throw new Error('ASSIST must belong to the last legal pass received by the shooter.');
     }
-    const autonomousCreation = session.facts.some((fact) => {
-      const payload = asRecord(fact.payload);
-      if (
-        payload?.type !== 'CREATION' ||
-        payload.creatorId !== shooterId ||
-        typeof payload.behaviorId !== 'string' ||
-        !AUTONOMOUS_ASSIST_BREAK_BEHAVIORS.has(payload.behaviorId)
-      ) {
-        return false;
-      }
-      const source = eventsById.get(fact.sourceEventIds[0]!);
-      return (
-        source !== undefined &&
-        source.period === shot.period &&
-        source.possessionIndex === shot.possessionIndex &&
-        source.cursor > lastPass.source.cursor &&
-        source.cursor < shot.cursor
-      );
-    });
-    if (autonomousCreation) {
-      throw new Error('An autonomous shooter creation clears the preceding assist candidate.');
+    const invalidatingEvent = session.events.find(
+      (event) =>
+        event.cursor > lastPass.source.cursor &&
+        event.cursor < shot.cursor &&
+        (event.payload.type === 'TURNOVER' ||
+          event.payload.type === 'SHOT' ||
+          event.payload.type === 'FREE_THROW'),
+    );
+    if (invalidatingEvent !== undefined) {
+      throw new Error('ASSIST candidate ended before the made field goal.');
     }
   }
 }
@@ -333,8 +314,8 @@ function assertStructuredFacts(
       ) {
         throw new Error('CreationFact next behavior must be registered or null.');
       }
-      if (sources.some((candidate) => candidate.payload.type !== 'CLOCK_ADVANCED')) {
-        throw new Error('CreationFact must source its committed behavior clock event.');
+      if (sources.length !== 1 || source.payload.type !== 'CLOCK_ADVANCED') {
+        throw new Error('CreationFact must source exactly one committed behavior clock event.');
       }
       for (const candidate of sources) {
         assertFactCoordinates(payload, candidate);
