@@ -9,6 +9,7 @@ If this work is ever merged, rollback must use a normal revert PR. Do not restor
 `81697e9d26e6bf5ea372b9fffdd427598fc3d87f` implementation as the task head, because it predates
 the approved v2.9-R1 and Erratum 01 authority.
 
-The post-B6R review remediation is an ordinary direct successor of the prior Candidate. If it must
-be withdrawn before merge, revert that successor normally while retaining the B1R-B6R history and
-the review record; do not force-push or restore the superseded v2.9 implementation.
+The post-B6R and B7 correction commits are ordinary direct successors of the prior Candidate. If
+either must be withdrawn before merge, revert the relevant successor normally while retaining the
+B1R-B6R history and review record; do not force-push or restore the superseded v2.9
+implementation.

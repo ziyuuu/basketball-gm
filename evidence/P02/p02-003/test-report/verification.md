@@ -66,17 +66,24 @@ P00, P01, P01-M1, and the pre-evidence P02 manifest all validate before adding t
 the P02-003 evidence set is complete, the P02 manifest is regenerated and validated again. The R1
 design and Erratum 01 manifests are also validated without editing their authority files.
 
-## B7 runner/protocol/replay remediation verification
+## B7 runner/protocol/replay correction verification
 
 The B7 runner no longer emits a fixed Q4 score and otherwise-only `UNFORCED_DEAD_BALL` sequence.
-It invokes the accepted behavior selection, execution-probability, pass/shot/rebound/foul/free-throw
-and attribution/Fact primitives, including HELPD, steal, block and last-pass assist paths. Its only
-public finalization result is the frozen `MatchProtocolBundleSchema` shape with `input`, full
-`anchors`, and a parsed `MatchResultDraft` containing `eventDigest` and `matchResultId`.
+Its selectable behavior set is derived directly from the frozen registry (34 rows), rather than a
+runner-local subset. It consumes the existing `SEGMENT_DURATION`, `SHOOTER`, creation/off-ball and
+defensive execution keys while dispatching through the accepted behavior selection,
+execution-probability, pass/shot/rebound/foul/free-throw and attribution/Fact primitives, including
+HELPD, PRESS, DOUBLET, steal, block and last-pass assist paths. Its only public finalization result
+is the frozen `MatchProtocolBundleSchema` shape with `input`, full `anchors`, and a parsed
+`MatchResultDraft` containing `eventDigest` and `matchResultId`.
 
 `replayMatch(input, authoritativeBundle)` parses the supplied authority, requires the exact input,
-re-executes the match, and rejects any non-identical final protocol. The focused B7 suite passes 4/4:
-OFFICIAL, FRIENDLY and SCRIMMAGE all compare Events, Facts, Transcript, Anchors, MatchResult and
-hashes across step/run/replay; a tampered protocol identity is rejected. The full `pnpm check`
-after this remediation passes 23 files / 246 tests, Prettier, ESLint, TypeScript, boundaries, and
-both production builds.
+re-executes the match, and rejects any non-identical final protocol. The focused B7 suite passes 5/5:
+the registry-derived 34-row selectable matrix; OFFICIAL, FRIENDLY and SCRIMMAGE per-object equality
+over Events, Facts, Transcript, Anchors, MatchResult and hashes across step/run/replay; and one
+minimal protocol/replay consistency negative for modified transcript/result identity. This is replay
+verification only, not anti-tamper or player-save protection. The focused run takes 187.68 seconds.
+
+The complete `pnpm check` after this correction passes 23 files / 247 tests, Prettier, ESLint,
+TypeScript, boundaries, and both production builds. It takes 241.93 seconds. These measurements are
+recorded for B8; they do not claim compliance with B8's 10,000-match performance budget.
