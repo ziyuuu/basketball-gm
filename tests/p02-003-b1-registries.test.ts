@@ -6,10 +6,17 @@ import {
   MODEL_B_BEHAVIOR_MATRIX_IDS,
   MODEL_B_BEHAVIOR_REGISTRY,
   MODEL_B_DRAW_KINDS,
+  MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY,
+  MODEL_B_DEFENSIVE_DUTY_REGISTRY,
   MODEL_B_EVENT_TYPES,
+  MODEL_B_EXECUTION_BLEND_REGISTRY,
+  MODEL_B_LEGACY_RULES_CONTENT_HASH,
   MODEL_B_PARAMETER_REGISTRY,
+  MODEL_B_REGISTRY_VERSION,
   MODEL_B_RNG_SEMANTIC_REGISTRY,
+  MODEL_B_RULES_VERSION,
   MODEL_B_RULES_CONTENT_HASH,
+  MODEL_B_SNAPSHOT_PROFILE_REGISTRY,
   MODEL_B_SCENARIO_REGISTRY,
   assertModelBRegistryIntegrity,
   calculateAbilityBlendMilli,
@@ -29,7 +36,11 @@ import {
   calculateTurnoverProbabilityMilli,
   calculateTacticalExecutionModifierMilli,
   calculateTeamCoordinationIndexMilli,
+  normalizeAbsoluteWingspanMilli,
+  normalizeHeightMilli,
+  normalizeWingspanAdvantageMilli,
   stableSortPlayersById,
+  type ModelBPhysicalPlayerSnapshot,
   type MatchPlayerSnapshot,
 } from '../packages/domain/src/match/index.js';
 
@@ -62,6 +73,44 @@ function player(
       defensiveRisk: 50,
       offensiveRebounding: 50,
     },
+    archetypeTrait: null,
+    fatigueMilli: 30_000,
+    chemistryMilli: 50_000,
+    ...overrides,
+  };
+}
+
+function physicalPlayer(
+  playerId: string,
+  overrides: Partial<ModelBPhysicalPlayerSnapshot> = {},
+): ModelBPhysicalPlayerSnapshot {
+  return {
+    snapshotVersion: 'P02_MATCH_PLAYER_PHYSICAL_V1',
+    playerId,
+    primaryPosition: 'PG',
+    secondaryPosition: 'SG',
+    abilityProfile: {
+      version: 'P02_CORE_11_V1',
+      values: {
+        finishing: 50,
+        shooting: 50,
+        ballHandling: 50,
+        playmaking: 50,
+        perimeterDefense: 50,
+        interiorDefense: 50,
+        rebounding: 50,
+        athleticism: 50,
+        stamina: 50,
+        tacticalUnderstanding: 50,
+        strength: 50,
+      },
+    },
+    physicalProfile: {
+      version: 'HEIGHT_WINGSPAN_CM_V1',
+      heightCm: 177,
+      wingspanCm: 184,
+    },
+    tendencies: player('legacy-shape').tendencies,
     archetypeTrait: null,
     fatigueMilli: 30_000,
     chemistryMilli: 50_000,
@@ -128,6 +177,25 @@ describe('P02-003 B1 frozen registries', () => {
       expect(new Set(scenario.seeds).size).toBe(64);
     }
     expect(MODEL_B_RULES_CONTENT_HASH).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(MODEL_B_REGISTRY_VERSION).toBe('p02-003-model-b-v2.9-r1-final');
+    expect(MODEL_B_RULES_VERSION).toBe('p02-003-v2.9-r1-final');
+    expect(MODEL_B_RULES_CONTENT_HASH).not.toBe(MODEL_B_LEGACY_RULES_CONTENT_HASH);
+    expect(MODEL_B_LEGACY_RULES_CONTENT_HASH).toBe(
+      'sha256:55b865f3f28dcdde0aead21d249e44e53d0d76b0106c6d11b7fa686f6c49efc2',
+    );
+  });
+
+  it('registers the Physical profile, defensive duties and defensive-action fact contract', () => {
+    expect(MODEL_B_SNAPSHOT_PROFILE_REGISTRY.physicalSnapshotV1.abilityKeys).toHaveLength(11);
+    expect(MODEL_B_SNAPSHOT_PROFILE_REGISTRY.physicalSnapshotV1.abilityKeys).toContain('strength');
+    expect(MODEL_B_SNAPSHOT_PROFILE_REGISTRY.legacySnapshot.modelBPlayable).toBe(false);
+    expect(MODEL_B_DEFENSIVE_DUTY_REGISTRY.C.blockCandidateModifierMilli).toBe(8_000);
+    expect(MODEL_B_DEFENSIVE_DUTY_REGISTRY.PG.passInterceptionCandidateModifierMilli).toBe(6_000);
+    expect(MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY.helpd).toMatchObject({
+      successfulDeltaMilli: -6_000,
+      noEffectDeltaMilli: 0,
+      creationFactAllowed: false,
+    });
   });
 });
 
@@ -177,6 +245,51 @@ describe('P02-003 B1 fixed calculation pipeline', () => {
     expect(calculateAbilityBlendMilli(subject, 'BALL_SECURITY')).toBe(50_500);
     expect(calculateFatiguePenaltyMilli(100_000, 'FULL')).toBe(14_000);
     expect(calculateFatiguePenaltyMilli(80_000, 'HALF')).toBe(5_000);
+  });
+
+  it('normalizes height and wingspan with the frozen roundHalfUp and clamp rules', () => {
+    expect(normalizeHeightMilli(150)).toBe(0);
+    expect(normalizeHeightMilli(177)).toBe(49_091);
+    expect(normalizeHeightMilli(220)).toBe(100_000);
+    expect(normalizeAbsoluteWingspanMilli(184)).toBe(48_571);
+    expect(normalizeAbsoluteWingspanMilli(235)).toBe(100_000);
+    expect(normalizeWingspanAdvantageMilli(177, 184)).toBe(56_667);
+    expect(normalizeWingspanAdvantageMilli(220, 140)).toBe(0);
+  });
+
+  it('uses each Physical factor once and locks the Erratum 01 rim-protection term', () => {
+    for (const terms of Object.values(MODEL_B_EXECUTION_BLEND_REGISTRY)) {
+      expect(terms.reduce((total, [, weight]) => total + weight, 0)).toBe(1_000);
+      expect(new Set(terms.map(([attribute]) => attribute)).size).toBe(terms.length);
+    }
+    expect(MODEL_B_EXECUTION_BLEND_REGISTRY.INSIDE_SHOT_PROTECTION[0]).toEqual([
+      'interiorDefense',
+      450,
+    ]);
+    expect(MODEL_B_EXECUTION_BLEND_REGISTRY.INSIDE_SHOT_PROTECTION).not.toContainEqual([
+      'finishing',
+      450,
+    ]);
+
+    const baseline = physicalPlayer('rim-baseline');
+    const higherInteriorDefense = physicalPlayer('rim-defense', {
+      abilityProfile: {
+        ...baseline.abilityProfile,
+        values: { ...baseline.abilityProfile.values, interiorDefense: 90 },
+      },
+    });
+    const higherFinishing = physicalPlayer('rim-finishing', {
+      abilityProfile: {
+        ...baseline.abilityProfile,
+        values: { ...baseline.abilityProfile.values, finishing: 90 },
+      },
+    });
+    expect(
+      calculateAbilityBlendMilli(higherInteriorDefense, 'INSIDE_SHOT_PROTECTION'),
+    ).toBeGreaterThan(calculateAbilityBlendMilli(baseline, 'INSIDE_SHOT_PROTECTION'));
+    expect(calculateAbilityBlendMilli(higherFinishing, 'INSIDE_SHOT_PROTECTION')).toBe(
+      calculateAbilityBlendMilli(baseline, 'INSIDE_SHOT_PROTECTION'),
+    );
   });
 
   it('keeps fatigue accumulation and tactical benefits/costs explicit', () => {

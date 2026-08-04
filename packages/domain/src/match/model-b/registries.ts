@@ -2,7 +2,90 @@ import { idHash } from '../../core/canonical-v2.js';
 import type { CanonicalV2Value } from '../../core/canonical-v2.js';
 import type { MatchDrawKind } from '../schemas.js';
 
-export const MODEL_B_REGISTRY_VERSION = 'p02-003-model-b-v2.9-final-r1';
+export const MODEL_B_LEGACY_REGISTRY_VERSION = 'p02-003-model-b-v2.9-final-r1';
+export const MODEL_B_LEGACY_RULES_CONTENT_HASH =
+  'sha256:55b865f3f28dcdde0aead21d249e44e53d0d76b0106c6d11b7fa686f6c49efc2';
+export const MODEL_B_REGISTRY_VERSION = 'p02-003-model-b-v2.9-r1-final';
+export const MODEL_B_RULES_VERSION = 'p02-003-v2.9-r1-final';
+
+export const MODEL_B_SNAPSHOT_PROFILE_REGISTRY = deepFreeze({
+  legacySnapshot: {
+    version: 'P02_MATCH_PLAYER_LEGACY',
+    abilityProfileVersion: 'P02_CORE_10_LEGACY',
+    modelBPlayable: false,
+  },
+  physicalSnapshotV1: {
+    version: 'P02_MATCH_PLAYER_PHYSICAL_V1',
+    abilityProfileVersion: 'P02_CORE_11_V1',
+    physicalProfileVersion: 'HEIGHT_WINGSPAN_CM_V1',
+    modelBPlayable: true,
+    abilityKeys: [
+      'finishing',
+      'shooting',
+      'ballHandling',
+      'playmaking',
+      'perimeterDefense',
+      'interiorDefense',
+      'rebounding',
+      'athleticism',
+      'stamina',
+      'tacticalUnderstanding',
+      'strength',
+    ],
+    physicalKeys: ['heightCm', 'wingspanCm'],
+  },
+});
+
+export const MODEL_B_DEFENSIVE_DUTY_REGISTRY = deepFreeze({
+  C: {
+    duty: 'RIM_ANCHOR',
+    availabilityMilli: { HELPD: 1_000, CONTEST: 1_000, PRESS: 300, STLTRY: 250 },
+    helpSelectionWeight: 1_000,
+    blockCandidateModifierMilli: 8_000,
+    passInterceptionCandidateModifierMilli: 0,
+  },
+  PF: {
+    duty: 'RIM_HELPER',
+    availabilityMilli: { HELPD: 900, CONTEST: 950, PRESS: 500, STLTRY: 450 },
+    helpSelectionWeight: 850,
+    blockCandidateModifierMilli: 5_000,
+    passInterceptionCandidateModifierMilli: 1_000,
+  },
+  SF: {
+    duty: 'WING_HELPER',
+    availabilityMilli: { HELPD: 700, CONTEST: 850, PRESS: 700, STLTRY: 700 },
+    helpSelectionWeight: 650,
+    blockCandidateModifierMilli: 2_500,
+    passInterceptionCandidateModifierMilli: 2_500,
+  },
+  SG: {
+    duty: 'PERIMETER_INTERCEPTOR',
+    availabilityMilli: { HELPD: 400, CONTEST: 750, PRESS: 850, STLTRY: 900 },
+    helpSelectionWeight: 350,
+    blockCandidateModifierMilli: 500,
+    passInterceptionCandidateModifierMilli: 5_000,
+  },
+  PG: {
+    duty: 'POINT_OF_ATTACK',
+    availabilityMilli: { HELPD: 300, CONTEST: 700, PRESS: 900, STLTRY: 1_000 },
+    helpSelectionWeight: 250,
+    blockCandidateModifierMilli: 0,
+    passInterceptionCandidateModifierMilli: 6_000,
+  },
+});
+
+export const MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY = deepFreeze({
+  payloadType: 'DEFENSIVE_ACTION',
+  behaviorIds: ['HELPD', 'PRESS', 'DOUBLET'],
+  results: ['SUCCESS', 'NO_EFFECT', 'FAILED_BREAKDOWN', 'FOUL'],
+  helpd: {
+    sourceEventType: 'CLOCK_ADVANCED',
+    successfulDeltaMilli: -6_000,
+    noEffectDeltaMilli: 0,
+    breakdownOpportunity: false,
+    creationFactAllowed: false,
+  },
+});
 
 export type BehaviorClassification =
   'SELECTABLE_DETERMINISTIC' | 'SELECTABLE_ONE_DRAW' | 'RULE_RESULT' | 'ATTRIBUTION_ONLY';
@@ -233,7 +316,7 @@ export const MODEL_B_DRAW_KINDS = deepFreeze([
   'ASSIST_ATTRIBUTION',
 ] as const satisfies readonly MatchDrawKind[]);
 
-export const MODEL_B_EXECUTION_BLEND_REGISTRY = deepFreeze({
+export const MODEL_B_LEGACY_EXECUTION_BLEND_REGISTRY = deepFreeze({
   BALL_SECURITY: [
     ['ballHandling', 500],
     ['playmaking', 300],
@@ -378,6 +461,246 @@ export const MODEL_B_EXECUTION_BLEND_REGISTRY = deepFreeze({
     ['perimeterDefense', 250],
     ['tacticalUnderstanding', 200],
     ['athleticism', 100],
+  ],
+  DOUBLE_TEAM: [
+    ['perimeterDefense', 400],
+    ['interiorDefense', 300],
+    ['tacticalUnderstanding', 200],
+    ['athleticism', 100],
+  ],
+  PRESS: [
+    ['perimeterDefense', 500],
+    ['athleticism', 250],
+    ['tacticalUnderstanding', 250],
+  ],
+  SPACING: [
+    ['shooting', 700],
+    ['athleticism', 150],
+    ['tacticalUnderstanding', 150],
+  ],
+  HELP_ENVIRONMENT_DEFENSE: [
+    ['perimeterDefense', 500],
+    ['interiorDefense', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  SCREEN_DEFENSE: [
+    ['perimeterDefense', 500],
+    ['athleticism', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  CUT_DEFENSE: [
+    ['perimeterDefense', 450],
+    ['interiorDefense', 250],
+    ['athleticism', 150],
+    ['tacticalUnderstanding', 150],
+  ],
+  DOUBLE_CREATE_DEFENSE: [
+    ['interiorDefense', 450],
+    ['perimeterDefense', 250],
+    ['athleticism', 150],
+    ['tacticalUnderstanding', 150],
+  ],
+  OFFENSIVE_CONTROL: [
+    ['ballHandling', 500],
+    ['athleticism', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  HELD_KICK: [
+    ['playmaking', 550],
+    ['tacticalUnderstanding', 250],
+    ['ballHandling', 200],
+  ],
+} as const);
+
+export const MODEL_B_EXECUTION_BLEND_REGISTRY = deepFreeze({
+  BALL_SECURITY: [
+    ['ballHandling', 500],
+    ['playmaking', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  DEFENSIVE_PRESSURE: [
+    ['perimeterDefense', 550],
+    ['athleticism', 250],
+    ['tacticalUnderstanding', 200],
+  ],
+  INSIDE_OFFENSE: [
+    ['finishing', 500],
+    ['athleticism', 150],
+    ['strength', 100],
+    ['height', 100],
+    ['absoluteWingspan', 50],
+    ['tacticalUnderstanding', 100],
+  ],
+  INSIDE_DEFENSE: [
+    ['interiorDefense', 400],
+    ['athleticism', 100],
+    ['strength', 100],
+    ['height', 150],
+    ['absoluteWingspan', 150],
+    ['tacticalUnderstanding', 100],
+  ],
+  MID_RANGE_OFFENSE: [
+    ['shooting', 650],
+    ['finishing', 200],
+    ['tacticalUnderstanding', 150],
+  ],
+  MID_RANGE_DEFENSE: [
+    ['perimeterDefense', 450],
+    ['interiorDefense', 200],
+    ['athleticism', 150],
+    ['wingspanAdvantage', 100],
+    ['tacticalUnderstanding', 100],
+  ],
+  THREE_POINT_OFFENSE: [
+    ['shooting', 800],
+    ['tacticalUnderstanding', 200],
+  ],
+  THREE_POINT_DEFENSE: [
+    ['perimeterDefense', 650],
+    ['athleticism', 150],
+    ['wingspanAdvantage', 100],
+    ['tacticalUnderstanding', 100],
+  ],
+  CREATION: [
+    ['playmaking', 550],
+    ['ballHandling', 250],
+    ['tacticalUnderstanding', 200],
+  ],
+  DRIVE_CREATION: [
+    ['ballHandling', 550],
+    ['athleticism', 250],
+    ['tacticalUnderstanding', 200],
+  ],
+  SHAKE_CREATION: [
+    ['ballHandling', 500],
+    ['athleticism', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  ISO_CREATION: [
+    ['ballHandling', 500],
+    ['athleticism', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  STEP_BACK_CREATION: [
+    ['ballHandling', 500],
+    ['athleticism', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  POSTUP_CREATION: [
+    ['ballHandling', 400],
+    ['strength', 250],
+    ['height', 100],
+    ['absoluteWingspan', 50],
+    ['tacticalUnderstanding', 200],
+  ],
+  HIGH_POST_CREATION: [
+    ['playmaking', 550],
+    ['ballHandling', 250],
+    ['tacticalUnderstanding', 200],
+  ],
+  PERSONAL_REBOUND: [
+    ['rebounding', 500],
+    ['strength', 150],
+    ['athleticism', 100],
+    ['height', 150],
+    ['absoluteWingspan', 100],
+  ],
+  BOXOUT_EXECUTION: [
+    ['rebounding', 550],
+    ['strength', 200],
+    ['tacticalUnderstanding', 150],
+    ['height', 50],
+    ['athleticism', 50],
+  ],
+  DEFENSIVE_CONTROL: [
+    ['perimeterDefense', 550],
+    ['athleticism', 200],
+    ['tacticalUnderstanding', 200],
+    ['wingspanAdvantage', 50],
+  ],
+  INSIDE_DEFENSIVE_CONTROL: [
+    ['interiorDefense', 400],
+    ['strength', 150],
+    ['athleticism', 100],
+    ['height', 100],
+    ['absoluteWingspan', 100],
+    ['tacticalUnderstanding', 150],
+  ],
+  PERIMETER_DEFENSIVE_CONTROL: [
+    ['perimeterDefense', 550],
+    ['athleticism', 200],
+    ['tacticalUnderstanding', 200],
+    ['wingspanAdvantage', 50],
+  ],
+  INSIDE_CONTACT: [
+    ['finishing', 450],
+    ['strength', 200],
+    ['athleticism', 150],
+    ['height', 50],
+    ['ballHandling', 150],
+  ],
+  PERIMETER_CONTACT: [
+    ['shooting', 600],
+    ['ballHandling', 200],
+    ['tacticalUnderstanding', 200],
+  ],
+  STEAL: [
+    ['perimeterDefense', 550],
+    ['athleticism', 200],
+    ['tacticalUnderstanding', 150],
+    ['wingspanAdvantage', 100],
+  ],
+  PASS_INTERCEPTION: [
+    ['perimeterDefense', 500],
+    ['wingspanAdvantage', 200],
+    ['athleticism', 150],
+    ['tacticalUnderstanding', 150],
+  ],
+  BALL_PROTECTION: [
+    ['ballHandling', 550],
+    ['playmaking', 250],
+    ['tacticalUnderstanding', 200],
+  ],
+  BLOCK: [
+    ['interiorDefense', 450],
+    ['athleticism', 150],
+    ['height', 150],
+    ['absoluteWingspan', 150],
+    ['tacticalUnderstanding', 100],
+  ],
+  INSIDE_SHOT_PROTECTION: [
+    ['interiorDefense', 450],
+    ['athleticism', 150],
+    ['strength', 150],
+    ['height', 100],
+    ['absoluteWingspan', 50],
+    ['tacticalUnderstanding', 100],
+  ],
+  MID_SHOT_PROTECTION: [
+    ['shooting', 600],
+    ['ballHandling', 200],
+    ['tacticalUnderstanding', 200],
+  ],
+  SCREEN: [
+    ['tacticalUnderstanding', 450],
+    ['strength', 350],
+    ['athleticism', 200],
+  ],
+  CUT: [
+    ['tacticalUnderstanding', 500],
+    ['athleticism', 300],
+    ['finishing', 200],
+  ],
+  DOUBLE_CREATE: [
+    ['tacticalUnderstanding', 500],
+    ['playmaking', 300],
+    ['shooting', 200],
+  ],
+  HELP_DEFENSE: [
+    ['interiorDefense', 400],
+    ['perimeterDefense', 250],
+    ['tacticalUnderstanding', 200],
+    ['athleticism', 150],
   ],
   DOUBLE_TEAM: [
     ['perimeterDefense', 400],
@@ -663,11 +986,15 @@ export const MODEL_B_SCENARIO_REGISTRY = deepFreeze({
 
 export const MODEL_B_RULES_CONTENT_REGISTRY = deepFreeze({
   registryVersion: MODEL_B_REGISTRY_VERSION,
+  rulesVersion: MODEL_B_RULES_VERSION,
+  snapshotProfiles: MODEL_B_SNAPSHOT_PROFILE_REGISTRY,
   behaviorRegistry: MODEL_B_BEHAVIOR_REGISTRY,
   behaviorMatrixIds: MODEL_B_BEHAVIOR_MATRIX_IDS,
   eventTypes: MODEL_B_EVENT_TYPES,
   drawKinds: MODEL_B_DRAW_KINDS,
   executionBlends: MODEL_B_EXECUTION_BLEND_REGISTRY,
+  defensiveDuties: MODEL_B_DEFENSIVE_DUTY_REGISTRY,
+  defensiveActionFacts: MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY,
   parameters: MODEL_B_PARAMETER_REGISTRY,
   rngSemanticOrdinals: MODEL_B_RNG_SEMANTIC_REGISTRY,
   scenarioRegistry: MODEL_B_SCENARIO_REGISTRY,
@@ -710,6 +1037,24 @@ export function assertModelBRegistryIntegrity(): void {
   }
   if (MODEL_B_PARAMETER_REGISTRY.offensiveRebound.boxoutExecutionBonusMilli !== 4_000) {
     throw new Error('The frozen first-candidate BOXOUT execution bonus must remain +4.');
+  }
+  for (const [blend, terms] of Object.entries(MODEL_B_EXECUTION_BLEND_REGISTRY)) {
+    if (terms.reduce((total, [, weight]) => total + weight, 0) !== 1_000) {
+      throw new Error(`Physical execution blend ${blend} must total 1000.`);
+    }
+  }
+  const insideProtection = MODEL_B_EXECUTION_BLEND_REGISTRY.INSIDE_SHOT_PROTECTION;
+  if (
+    insideProtection[0][0] !== 'interiorDefense' ||
+    insideProtection[0][1] !== 450 ||
+    insideProtection.some(([attribute]) => String(attribute) === 'finishing')
+  ) {
+    throw new Error(
+      'R1 INSIDE_SHOT_PROTECTION must begin with 450 interiorDefense and exclude finishing.',
+    );
+  }
+  if (MODEL_B_LEGACY_RULES_CONTENT_HASH === MODEL_B_RULES_CONTENT_HASH) {
+    throw new Error('R1 Model B rules/content identity must differ from the legacy v2.9 identity.');
   }
   for (const scenario of MODEL_B_SCENARIO_REGISTRY.scenarios) {
     if (scenario.seeds.length !== 64 || new Set(scenario.seeds).size !== 64) {

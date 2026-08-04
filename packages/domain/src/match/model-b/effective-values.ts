@@ -2,11 +2,44 @@ import { clampFixedPoint, compareUtf16CodeUnits, roundHalfUp } from '../../core/
 import type { MatchInput } from '../schemas.js';
 import {
   MODEL_B_EXECUTION_BLEND_REGISTRY,
+  MODEL_B_LEGACY_EXECUTION_BLEND_REGISTRY,
   MODEL_B_PARAMETER_REGISTRY,
   type ModelBExecutionBlend,
 } from './registries.js';
 
 export type MatchPlayerSnapshot = MatchInput['homeTeam']['players'][number];
+export type ModelBPhysicalPlayerSnapshot = Readonly<{
+  snapshotVersion: 'P02_MATCH_PLAYER_PHYSICAL_V1';
+  playerId: string;
+  primaryPosition: 'PG' | 'SG' | 'SF' | 'PF' | 'C';
+  secondaryPosition: 'PG' | 'SG' | 'SF' | 'PF' | 'C' | null;
+  abilityProfile: Readonly<{
+    version: 'P02_CORE_11_V1';
+    values: Readonly<{
+      finishing: number;
+      shooting: number;
+      ballHandling: number;
+      playmaking: number;
+      perimeterDefense: number;
+      interiorDefense: number;
+      rebounding: number;
+      athleticism: number;
+      stamina: number;
+      tacticalUnderstanding: number;
+      strength: number;
+    }>;
+  }>;
+  physicalProfile: Readonly<{
+    version: 'HEIGHT_WINGSPAN_CM_V1';
+    heightCm: number;
+    wingspanCm: number;
+  }>;
+  tendencies: MatchPlayerSnapshot['tendencies'];
+  archetypeTrait: MatchPlayerSnapshot['archetypeTrait'];
+  fatigueMilli: number;
+  chemistryMilli: number;
+}>;
+export type ModelBExecutionPlayerSnapshot = MatchPlayerSnapshot | ModelBPhysicalPlayerSnapshot;
 export type MatchPosition = MatchInput['homeTeam']['players'][number]['primaryPosition'];
 export type MatchRoles = MatchInput['homeTeam']['roles'];
 export type MatchTactics = MatchInput['homeTeam']['tactics'];
@@ -31,7 +64,7 @@ export type TraitContext =
 export type FatigueSensitivity = 'FULL' | 'HALF' | 'NONE';
 
 export type EffectiveExecutionInput = Readonly<{
-  player: MatchPlayerSnapshot;
+  player: ModelBExecutionPlayerSnapshot;
   blend: ModelBExecutionBlend;
   fatigueSensitivity: FatigueSensitivity;
   assignedPosition: MatchPosition | null;
@@ -62,25 +95,84 @@ function assertMilli(value: number, label: string, minimum = -100_000, maximum =
   }
 }
 
-function attributeValue(player: MatchPlayerSnapshot, attribute: string): number {
-  if (attribute === 'bodyImpact') return player.bodyImpact;
-  if (!(attribute in player.abilities)) throw new Error(`Unknown Model B ability: ${attribute}.`);
-  return player.abilities[attribute as keyof MatchPlayerSnapshot['abilities']];
+function isPhysicalSnapshot(
+  player: ModelBExecutionPlayerSnapshot,
+): player is ModelBPhysicalPlayerSnapshot {
+  return 'snapshotVersion' in player && player.snapshotVersion === 'P02_MATCH_PLAYER_PHYSICAL_V1';
+}
+
+export function normalizeHeightMilli(heightCm: number): number {
+  if (!Number.isSafeInteger(heightCm) || heightCm < 140 || heightCm > 220) {
+    throw new Error('heightCm must be an integer in 140..220.');
+  }
+  return clampFixedPoint(roundHalfUp((heightCm - 150) * 100_000, 55), 0, 100_000);
+}
+
+export function normalizeAbsoluteWingspanMilli(wingspanCm: number): number {
+  if (!Number.isSafeInteger(wingspanCm) || wingspanCm < 140 || wingspanCm > 235) {
+    throw new Error('wingspanCm must be an integer in 140..235.');
+  }
+  return clampFixedPoint(roundHalfUp((wingspanCm - 150) * 100_000, 70), 0, 100_000);
+}
+
+export function normalizeWingspanAdvantageMilli(heightCm: number, wingspanCm: number): number {
+  normalizeHeightMilli(heightCm);
+  normalizeAbsoluteWingspanMilli(wingspanCm);
+  return clampFixedPoint(roundHalfUp((wingspanCm - heightCm + 10) * 100_000, 30), 0, 100_000);
+}
+
+function physicalAttributeMilli(player: ModelBPhysicalPlayerSnapshot, attribute: string): number {
+  if (attribute in player.abilityProfile.values) {
+    return (
+      player.abilityProfile.values[
+        attribute as keyof ModelBPhysicalPlayerSnapshot['abilityProfile']['values']
+      ] * 1_000
+    );
+  }
+  if (attribute === 'height') return normalizeHeightMilli(player.physicalProfile.heightCm);
+  if (attribute === 'absoluteWingspan') {
+    return normalizeAbsoluteWingspanMilli(player.physicalProfile.wingspanCm);
+  }
+  if (attribute === 'wingspanAdvantage') {
+    return normalizeWingspanAdvantageMilli(
+      player.physicalProfile.heightCm,
+      player.physicalProfile.wingspanCm,
+    );
+  }
+  throw new Error(`Unknown Physical Model B attribute: ${attribute}.`);
+}
+
+function legacyAttributeMilli(player: MatchPlayerSnapshot, attribute: string): number {
+  if (attribute === 'bodyImpact') return player.bodyImpact * 1_000;
+  if (!(attribute in player.abilities))
+    throw new Error(`Unknown legacy Model B ability: ${attribute}.`);
+  return player.abilities[attribute as keyof MatchPlayerSnapshot['abilities']] * 1_000;
 }
 
 export function calculateAbilityBlendMilli(
-  player: MatchPlayerSnapshot,
+  player: ModelBExecutionPlayerSnapshot,
   blend: ModelBExecutionBlend,
 ): number {
-  const terms = MODEL_B_EXECUTION_BLEND_REGISTRY[blend];
+  const physical = isPhysicalSnapshot(player);
+  const terms = physical
+    ? MODEL_B_EXECUTION_BLEND_REGISTRY[blend]
+    : MODEL_B_LEGACY_EXECUTION_BLEND_REGISTRY[
+        blend as keyof typeof MODEL_B_LEGACY_EXECUTION_BLEND_REGISTRY
+      ];
+  if (terms === undefined) {
+    throw new Error(`Execution blend ${blend} is unavailable for the legacy snapshot variant.`);
+  }
   let totalWeight = 0;
-  let totalMilli = 0;
+  let weightedMilli = 0;
   for (const [attribute, weightMilli] of terms) {
     totalWeight += weightMilli;
-    totalMilli += attributeValue(player, attribute) * weightMilli;
+    weightedMilli +=
+      (physical
+        ? physicalAttributeMilli(player, attribute)
+        : legacyAttributeMilli(player, attribute)) * weightMilli;
   }
   if (totalWeight !== 1_000) throw new Error(`Execution blend ${blend} must total 1000.`);
-  return totalMilli;
+  return roundHalfUp(weightedMilli, 1_000);
 }
 
 export function calculateFatiguePenaltyMilli(
@@ -102,7 +194,7 @@ export function calculateFatiguePenaltyMilli(
 }
 
 export function calculatePositionModifierMilli(
-  player: MatchPlayerSnapshot,
+  player: ModelBExecutionPlayerSnapshot,
   assignedPosition: MatchPosition | null,
   applyPositionMismatch: boolean,
 ): number {
@@ -128,7 +220,7 @@ const TRAIT_CONTEXT = Object.freeze({
 } as const);
 
 export function calculateTraitModifierMilli(
-  player: MatchPlayerSnapshot,
+  player: ModelBExecutionPlayerSnapshot,
   context: TraitContext,
 ): number {
   const trait = player.archetypeTrait;
