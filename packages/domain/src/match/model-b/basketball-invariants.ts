@@ -153,6 +153,20 @@ const AUTONOMOUS_ASSIST_BREAK_BEHAVIORS = new Set([
   'HIGH_POST_CREATION',
 ]);
 
+const CREATION_FACT_BEHAVIORS = new Set([
+  'DRIVE',
+  'SHAKE',
+  'ISO',
+  'STEP_BACK',
+  'POSTUP',
+  'HIGH_POST_CREATION',
+  'SCREEN',
+  'CUT',
+  'HELDKICK',
+  'DOUBLECREATE',
+  'CREATIVE_PASS',
+]);
+
 function assertAssistFactCausality(
   session: ModelBSession,
   assistEvents: readonly MatchEvent[],
@@ -259,6 +273,7 @@ function assertStructuredFacts(
   const anchorsByHash = new Map(anchorPool.map((anchor) => [anchor.anchorHash, anchor]));
   const passSequences = new Map<string, number[]>();
   const creationSourceIds = new Set<string>();
+  const defensiveActionSourceIds = new Set<string>();
   const passSourceIds = new Set<string>();
   const handlerSourceIds = new Set<string>();
   const teamReboundSourceIds = new Set<string>();
@@ -287,11 +302,9 @@ function assertStructuredFacts(
       }
       if (
         typeof payload.behaviorId !== 'string' ||
-        !MODEL_B_BEHAVIOR_MATRIX_IDS.includes(
-          payload.behaviorId as (typeof MODEL_B_BEHAVIOR_MATRIX_IDS)[number],
-        )
+        !CREATION_FACT_BEHAVIORS.has(payload.behaviorId)
       ) {
-        throw new Error('CreationFact must use a registered behavior ID.');
+        throw new Error('CreationFact must use the closed offensive creation behavior set.');
       }
       assertInteger(
         payload.opportunityQualityDelta,
@@ -329,6 +342,76 @@ function assertStructuredFacts(
           throw new Error('One behavior source may produce at most one CreationFact.');
         }
         creationSourceIds.add(candidate.eventId);
+      }
+    } else if (payload.type === 'DEFENSIVE_ACTION') {
+      const defenseSide = possessionSide === 'HOME' ? 'AWAY' : 'HOME';
+      const defenseIds = new Set(
+        defenseSide === 'HOME'
+          ? session.input.homeTeam.registeredRosterIds
+          : session.input.awayTeam.registeredRosterIds,
+      );
+      if (
+        fact.factKind !== 'EXPLANATION' ||
+        payload.offenseSide !== possessionSide ||
+        payload.defenseSide !== defenseSide ||
+        typeof payload.handlerId !== 'string' ||
+        !possessionIds.has(payload.handlerId) ||
+        typeof payload.primaryDefenderId !== 'string' ||
+        !defenseIds.has(payload.primaryDefenderId) ||
+        !Array.isArray(payload.supportingDefenderIds) ||
+        payload.supportingDefenderIds.some(
+          (playerId) => typeof playerId !== 'string' || !defenseIds.has(playerId),
+        )
+      ) {
+        throw new Error('DefensiveActionFact participants must bind the current offense/defense.');
+      }
+      const supportingDefenderIds = payload.supportingDefenderIds as string[];
+      if (
+        new Set(supportingDefenderIds).size !== supportingDefenderIds.length ||
+        supportingDefenderIds.includes(payload.primaryDefenderId)
+      ) {
+        throw new Error('DefensiveActionFact defenders must be unique by role.');
+      }
+      if (
+        typeof payload.behaviorId !== 'string' ||
+        !['HELPD', 'PRESS', 'DOUBLET'].includes(payload.behaviorId) ||
+        typeof payload.result !== 'string' ||
+        !['SUCCESS', 'NO_EFFECT', 'FAILED_BREAKDOWN', 'FOUL'].includes(payload.result)
+      ) {
+        throw new Error('DefensiveActionFact behavior/result is outside the closed registry.');
+      }
+      assertInteger(
+        payload.opportunityQualityDelta,
+        'DefensiveActionFact opportunity delta',
+        -MODEL_B_PARAMETER_REGISTRY.opportunityPerEventCapMilli,
+      );
+      if (
+        Math.abs(payload.opportunityQualityDelta) >
+        MODEL_B_PARAMETER_REGISTRY.opportunityPerEventCapMilli
+      ) {
+        throw new Error('DefensiveActionFact opportunity delta must use the per-event ±6 cap.');
+      }
+      if (typeof payload.breakdownOpportunity !== 'boolean') {
+        throw new Error('DefensiveActionFact breakdownOpportunity must be boolean.');
+      }
+      if (sources.length !== 1 || source.payload.type !== 'CLOCK_ADVANCED') {
+        throw new Error('DefensiveActionFact must source exactly one committed CLOCK_ADVANCED.');
+      }
+      assertFactCoordinates(payload, source);
+      if (defensiveActionSourceIds.has(source.eventId)) {
+        throw new Error(
+          'One defensive behavior source may produce at most one DefensiveActionFact.',
+        );
+      }
+      defensiveActionSourceIds.add(source.eventId);
+      if (
+        payload.behaviorId === 'HELPD' &&
+        (supportingDefenderIds.length !== 1 ||
+          !['SUCCESS', 'NO_EFFECT'].includes(payload.result) ||
+          payload.opportunityQualityDelta !== (payload.result === 'SUCCESS' ? -6_000 : 0) ||
+          payload.breakdownOpportunity)
+      ) {
+        throw new Error('HELPD DefensiveActionFact violates its SUCCESS/NO_EFFECT contract.');
       }
     } else if (payload.type === 'PASS') {
       if (
@@ -403,6 +486,11 @@ function assertStructuredFacts(
       }
       teamReboundSourceIds.add(source.eventId);
       assertFactCoordinates(payload, source);
+    }
+  }
+  for (const sourceEventId of defensiveActionSourceIds) {
+    if (creationSourceIds.has(sourceEventId)) {
+      throw new Error('A defensive-action source cannot also produce an offensive CreationFact.');
     }
   }
   if (validatePassDensity) {

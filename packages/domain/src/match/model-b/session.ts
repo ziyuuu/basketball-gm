@@ -7,6 +7,7 @@ import {
   MatchEventSchema,
   MatchFactSchema,
   MatchInputSchema,
+  PhysicalMatchPlayerSnapshotV1Schema,
   MatchTranscriptEntrySchema,
   MatchTranscriptSchema,
   deriveEffectiveFragmentHash,
@@ -44,8 +45,17 @@ import {
   reduceModelBCommittedFatigue,
 } from './state-rules.js';
 
+type PhysicalizeMatchInput<T extends MatchInput> = T extends MatchInput
+  ? Omit<T, 'homeTeam' | 'awayTeam'> & {
+      homeTeam: Omit<T['homeTeam'], 'players'> & { players: MatchPlayerSnapshot[] };
+      awayTeam: Omit<T['awayTeam'], 'players'> & { players: MatchPlayerSnapshot[] };
+    }
+  : never;
+
+export type ModelBMatchInput = PhysicalizeMatchInput<MatchInput>;
+
 export type ModelBSession = Readonly<{
-  input: MatchInput;
+  input: ModelBMatchInput;
   anchors: readonly MatchAnchor[];
   events: readonly MatchEvent[];
   facts: readonly MatchFact[];
@@ -92,7 +102,7 @@ function deepFreeze<T>(value: T): Readonly<T> {
 }
 
 function freezeSession(input: {
-  input: MatchInput;
+  input: ModelBMatchInput;
   anchors: MatchAnchor[];
   events: MatchEvent[];
   facts: MatchFact[];
@@ -107,12 +117,15 @@ function freezeSession(input: {
   });
 }
 
-function sidePlayers(input: MatchInput, side: 'HOME' | 'AWAY'): readonly MatchPlayerSnapshot[] {
+function sidePlayers(
+  input: ModelBMatchInput,
+  side: 'HOME' | 'AWAY',
+): readonly MatchPlayerSnapshot[] {
   return side === 'HOME' ? input.homeTeam.players : input.awayTeam.players;
 }
 
 function lineupPlayers(
-  input: MatchInput,
+  input: ModelBMatchInput,
   side: 'HOME' | 'AWAY',
   lineup: MatchAnchor['lineups']['home'],
 ): MatchPlayerSnapshot[] {
@@ -143,11 +156,24 @@ function makeAnchor(input: Omit<MatchAnchor, 'anchorHash' | 'effectiveFragmentHa
   return deepFreeze(MatchAnchorSchema.parse(anchor));
 }
 
-export function createModelBSession(rawInput: MatchInput): ModelBSession {
+export function createModelBSession(rawInput: ModelBMatchInput): ModelBSession {
   const input = MatchInputSchema.parse(rawInput);
+  for (const [side, players] of [
+    ['HOME', input.homeTeam.players],
+    ['AWAY', input.awayTeam.players],
+  ] as const) {
+    for (const player of players) {
+      if (!PhysicalMatchPlayerSnapshotV1Schema.safeParse(player).success) {
+        throw new Error(
+          `Model B ${side} input requires the P02_MATCH_PLAYER_PHYSICAL_V1 snapshot variant.`,
+        );
+      }
+    }
+  }
+  const physicalInput = input as ModelBMatchInput;
   const openingSide =
     keyedDrawUnitInterval({
-      matchSeed: input.matchSeed,
+      matchSeed: physicalInput.matchSeed,
       period: 1,
       possessionIndex: 0,
       segmentIndex: 0,
@@ -157,16 +183,16 @@ export function createModelBSession(rawInput: MatchInput): ModelBSession {
       ? 'HOME'
       : 'AWAY';
   const lineups = {
-    home: { ...input.homeTeam.startingLineup },
-    away: { ...input.awayTeam.startingLineup },
+    home: { ...physicalInput.homeTeam.startingLineup },
+    away: { ...physicalInput.awayTeam.startingLineup },
   };
   const roles = {
-    home: { ...input.homeTeam.roles },
-    away: { ...input.awayTeam.roles },
+    home: { ...physicalInput.homeTeam.roles },
+    away: { ...physicalInput.awayTeam.roles },
   };
   const tactics = {
-    home: { ...input.homeTeam.tactics },
-    away: { ...input.awayTeam.tactics },
+    home: { ...physicalInput.homeTeam.tactics },
+    away: { ...physicalInput.awayTeam.tactics },
   };
   const controlBoundary = {
     kind: 'MATCH_START' as const,
@@ -176,16 +202,16 @@ export function createModelBSession(rawInput: MatchInput): ModelBSession {
   };
   const effectiveFragment = { tactics, roles, lineups, effects: [] };
   const fatigueMilliByPlayer = Object.fromEntries(
-    stableSortPlayersById([...input.homeTeam.players, ...input.awayTeam.players]).map((player) => [
-      player.playerId,
-      player.fatigueMilli,
-    ]),
+    stableSortPlayersById([
+      ...physicalInput.homeTeam.players,
+      ...physicalInput.awayTeam.players,
+    ]).map((player) => [player.playerId, player.fatigueMilli]),
   );
   const anchor = makeAnchor({
-    matchId: input.matchId,
+    matchId: physicalInput.matchId,
     previousAnchorHash: GENESIS_MATCH_ANCHOR_HASH,
     period: 1,
-    periodClockSeconds: input.rules.regularPeriodSeconds,
+    periodClockSeconds: physicalInput.rules.regularPeriodSeconds,
     score: { home: 0, away: 0 },
     possession: { side: openingSide, possessionIndex: 0, segmentIndex: 0 },
     eventCursor: 0,
@@ -196,16 +222,22 @@ export function createModelBSession(rawInput: MatchInput): ModelBSession {
     pendingSubstitutionEntryHashes: [],
     fatigueMilliByPlayer,
     chemistryWeightedMilli: {
-      home: calculateLineupChemistryMilli(lineupPlayers(input, 'HOME', lineups.home), roles.home),
-      away: calculateLineupChemistryMilli(lineupPlayers(input, 'AWAY', lineups.away), roles.away),
+      home: calculateLineupChemistryMilli(
+        lineupPlayers(physicalInput, 'HOME', lineups.home),
+        roles.home,
+      ),
+      away: calculateLineupChemistryMilli(
+        lineupPlayers(physicalInput, 'AWAY', lineups.away),
+        roles.away,
+      ),
     },
-    boxScore: createEmptyModelBBoxScore(input),
+    boxScore: createEmptyModelBBoxScore(physicalInput),
     effectiveFragment,
     controlBoundary,
     status: 'IN_PROGRESS',
   });
   return freezeSession({
-    input: deepFreeze(input),
+    input: deepFreeze(physicalInput),
     anchors: [anchor],
     events: [],
     facts: [],

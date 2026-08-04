@@ -12,15 +12,15 @@ import {
   type MatchAnchor,
   type MatchEffect,
   type MatchEvent,
-  type MatchInput,
 } from '../schemas.js';
 import {
   calculateCommittedFatigueIncrementMilli,
   calculateLineupChemistryMilli,
+  modelBAbilityValues,
   type MatchPlayerSnapshot,
 } from './effective-values.js';
 import { MODEL_B_PARAMETER_REGISTRY } from './registries.js';
-import type { ModelBSession } from './session.js';
+import type { ModelBMatchInput, ModelBSession } from './session.js';
 
 export const MODEL_B_INTERNAL_TEST_ROTATION_POLICY_ID = 'model-b-neutral-rotation/internal/test/v1';
 export const MODEL_B_OPPONENT_POLICY_ID = 'model-b-opponent-policy/v1';
@@ -43,7 +43,7 @@ function oppositeSide(side: MatchSide): MatchSide {
   return side === 'HOME' ? 'AWAY' : 'HOME';
 }
 
-function teamForSide(input: MatchInput, side: MatchSide): MatchInput['homeTeam'] {
+function teamForSide(input: ModelBMatchInput, side: MatchSide): ModelBMatchInput['homeTeam'] {
   return side === 'HOME' ? input.homeTeam : input.awayTeam;
 }
 
@@ -51,7 +51,7 @@ function boxPlayersForSide(boxScore: MatchBoxScore, side: MatchSide) {
   return boxScore[sideKey(side)].players;
 }
 
-function playerById(input: MatchInput, side: MatchSide): Map<string, MatchPlayerSnapshot> {
+function playerById(input: ModelBMatchInput, side: MatchSide): Map<string, MatchPlayerSnapshot> {
   return new Map(teamForSide(input, side).players.map((player) => [player.playerId, player]));
 }
 
@@ -80,7 +80,7 @@ function currentAnchor(session: ModelBSession): MatchAnchor {
   return anchor;
 }
 
-function rosterOrdinal(input: MatchInput, side: MatchSide, playerId: string): number {
+function rosterOrdinal(input: ModelBMatchInput, side: MatchSide, playerId: string): number {
   const ordinal = teamForSide(input, side).registeredRosterIds.indexOf(playerId);
   if (ordinal < 0) throw new Error(`Player ${playerId} is not registered for ${side}.`);
   return ordinal;
@@ -93,7 +93,7 @@ function positionFitOrdinal(player: MatchPlayerSnapshot, position: MatchPosition
 }
 
 function positionAbilitySummary(player: MatchPlayerSnapshot, position: MatchPosition): number {
-  const ability = player.abilities;
+  const ability = modelBAbilityValues(player);
   switch (position) {
     case 'PG':
       return (
@@ -131,7 +131,7 @@ function positionAbilitySummary(player: MatchPlayerSnapshot, position: MatchPosi
       return (
         ability.interiorDefense * 250 +
         ability.rebounding * 300 +
-        player.bodyImpact * 200 +
+        ability.strength * 200 +
         ability.finishing * 150 +
         ability.tacticalUnderstanding * 100
       );
@@ -176,7 +176,7 @@ export function calculateModelBShortHandedDefensePenaltyMilli(
  * side for that time slice.
  */
 export function reduceModelBCommittedFatigue(
-  input: MatchInput,
+  input: ModelBMatchInput,
   previousAnchor: MatchAnchor,
   payloads: readonly MatchEvent['payload'][],
 ): MatchAnchor['fatigueMilliByPlayer'] {
@@ -213,7 +213,7 @@ export function reduceModelBCommittedFatigue(
       const increment = calculateCommittedFatigueIncrementMilli({
         matchKind: input.matchKind,
         seconds,
-        stamina: player.abilities.stamina,
+        stamina: modelBAbilityValues(player).stamina,
         tactics: {
           pace: offensePace,
           offensiveFocus: 'BALANCED',
@@ -241,20 +241,20 @@ export function reduceModelBCommittedFatigue(
 }
 
 function roleScore(player: MatchPlayerSnapshot, role: keyof MatchRoles): number {
+  const ability = modelBAbilityValues(player);
   if (role === 'primaryOrganizer') {
-    return player.abilities.playmaking * 1_000 + player.abilities.ballHandling;
+    return ability.playmaking * 1_000 + ability.ballHandling;
   }
   if (role === 'offensiveHub') {
-    return player.abilities.playmaking * 1_000 + player.abilities.tacticalUnderstanding;
+    return ability.playmaking * 1_000 + ability.tacticalUnderstanding;
   }
   return (
-    (player.abilities.perimeterDefense + player.abilities.interiorDefense) * 1_000 +
-    player.abilities.tacticalUnderstanding
+    (ability.perimeterDefense + ability.interiorDefense) * 1_000 + ability.tacticalUnderstanding
   );
 }
 
 export function recalculateModelBEligibleLineupState(
-  input: MatchInput,
+  input: ModelBMatchInput,
   lineups: MatchAnchor['lineups'],
   previousRoles: MatchAnchor['roles'],
   boxScore: MatchAnchor['boxScore'],

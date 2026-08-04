@@ -41,13 +41,13 @@ import {
   normalizeWingspanAdvantageMilli,
   stableSortPlayersById,
   type ModelBPhysicalPlayerSnapshot,
-  type MatchPlayerSnapshot,
+  type LegacyMatchPlayerSnapshot,
 } from '../packages/domain/src/match/index.js';
 
 function player(
   playerId: string,
-  overrides: Partial<MatchPlayerSnapshot> = {},
-): MatchPlayerSnapshot {
+  overrides: Partial<LegacyMatchPlayerSnapshot> = {},
+): LegacyMatchPlayerSnapshot {
   return {
     playerId,
     primaryPosition: 'PG',

@@ -1,5 +1,9 @@
 import { clampFixedPoint, compareUtf16CodeUnits, roundHalfUp } from '../../core/index.js';
-import type { MatchInput } from '../schemas.js';
+import type {
+  LegacyMatchPlayerSnapshot,
+  MatchInput,
+  PhysicalMatchPlayerSnapshotV1,
+} from '../schemas.js';
 import {
   MODEL_B_EXECUTION_BLEND_REGISTRY,
   MODEL_B_LEGACY_EXECUTION_BLEND_REGISTRY,
@@ -7,42 +11,18 @@ import {
   type ModelBExecutionBlend,
 } from './registries.js';
 
-export type MatchPlayerSnapshot = MatchInput['homeTeam']['players'][number];
-export type ModelBPhysicalPlayerSnapshot = Readonly<{
-  snapshotVersion: 'P02_MATCH_PLAYER_PHYSICAL_V1';
-  playerId: string;
-  primaryPosition: 'PG' | 'SG' | 'SF' | 'PF' | 'C';
-  secondaryPosition: 'PG' | 'SG' | 'SF' | 'PF' | 'C' | null;
-  abilityProfile: Readonly<{
-    version: 'P02_CORE_11_V1';
-    values: Readonly<{
-      finishing: number;
-      shooting: number;
-      ballHandling: number;
-      playmaking: number;
-      perimeterDefense: number;
-      interiorDefense: number;
-      rebounding: number;
-      athleticism: number;
-      stamina: number;
-      tacticalUnderstanding: number;
-      strength: number;
-    }>;
-  }>;
-  physicalProfile: Readonly<{
-    version: 'HEIGHT_WINGSPAN_CM_V1';
-    heightCm: number;
-    wingspanCm: number;
-  }>;
-  tendencies: MatchPlayerSnapshot['tendencies'];
-  archetypeTrait: MatchPlayerSnapshot['archetypeTrait'];
-  fatigueMilli: number;
-  chemistryMilli: number;
-}>;
-export type ModelBExecutionPlayerSnapshot = MatchPlayerSnapshot | ModelBPhysicalPlayerSnapshot;
-export type MatchPosition = MatchInput['homeTeam']['players'][number]['primaryPosition'];
+export type MatchPlayerSnapshot = PhysicalMatchPlayerSnapshotV1;
+export type ModelBPhysicalPlayerSnapshot = PhysicalMatchPlayerSnapshotV1;
+export type ModelBExecutionPlayerSnapshot = LegacyMatchPlayerSnapshot | MatchPlayerSnapshot;
+export type MatchPosition = MatchPlayerSnapshot['primaryPosition'];
 export type MatchRoles = MatchInput['homeTeam']['roles'];
 export type MatchTactics = MatchInput['homeTeam']['tactics'];
+
+export function modelBAbilityValues(
+  player: MatchPlayerSnapshot,
+): MatchPlayerSnapshot['abilityProfile']['values'] {
+  return player.abilityProfile.values;
+}
 
 export type TacticalExecutionContext =
   | 'OPPONENT_PERIMETER_EXECUTION'
@@ -142,11 +122,11 @@ function physicalAttributeMilli(player: ModelBPhysicalPlayerSnapshot, attribute:
   throw new Error(`Unknown Physical Model B attribute: ${attribute}.`);
 }
 
-function legacyAttributeMilli(player: MatchPlayerSnapshot, attribute: string): number {
+function legacyAttributeMilli(player: LegacyMatchPlayerSnapshot, attribute: string): number {
   if (attribute === 'bodyImpact') return player.bodyImpact * 1_000;
   if (!(attribute in player.abilities))
     throw new Error(`Unknown legacy Model B ability: ${attribute}.`);
-  return player.abilities[attribute as keyof MatchPlayerSnapshot['abilities']] * 1_000;
+  return player.abilities[attribute as keyof LegacyMatchPlayerSnapshot['abilities']] * 1_000;
 }
 
 export function calculateAbilityBlendMilli(

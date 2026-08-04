@@ -77,10 +77,17 @@ describe('P02-003 B4 behavior candidates and semantic keys', () => {
   it('uses the exact product of tendency factors without reading abilities', () => {
     const baseline = player('HOME-01');
     const stronger = withPlayer(baseline, {
-      abilities: Object.fromEntries(
-        Object.keys(baseline.abilities).map((key) => [key, 100]),
-      ) as MatchPlayerSnapshot['abilities'],
-      bodyImpact: 100,
+      abilityProfile: {
+        ...baseline.abilityProfile,
+        values: Object.fromEntries(
+          Object.keys(baseline.abilityProfile.values).map((key) => [key, 100]),
+        ) as MatchPlayerSnapshot['abilityProfile']['values'],
+      },
+      physicalProfile: {
+        ...baseline.physicalProfile,
+        heightCm: 220,
+        wingspanCm: 235,
+      },
     });
     expect(calculateModelBBehaviorTendencyBasisPoints(baseline, 'DRIVE')).toBe(1_650);
     const baselineCandidates = buildModelBBehaviorCandidates({
@@ -254,7 +261,13 @@ describe('P02-003 B4 handler and participant selection', () => {
     const candidates = lineupPlayers('AWAY').slice(0, 4);
     const rated = candidates.map((candidate, index) =>
       withPlayer(candidate, {
-        abilities: { ...candidate.abilities, interiorDefense: [60, 90, 90, 40][index]! },
+        abilityProfile: {
+          ...candidate.abilityProfile,
+          values: {
+            ...candidate.abilityProfile.values,
+            interiorDefense: [60, 90, 90, 40][index]!,
+          },
+        },
       }),
     );
     expect(

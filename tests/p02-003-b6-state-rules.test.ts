@@ -137,7 +137,7 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     const offenseIncrement = calculateCommittedFatigueIncrementMilli({
       matchKind: input.matchKind,
       seconds: 10,
-      stamina: currentPlayer(session, offenseSide, offenseId).abilities.stamina,
+      stamina: currentPlayer(session, offenseSide, offenseId).abilityProfile.values.stamina,
       tactics: {
         pace: 'FAST',
         offensiveFocus: 'BALANCED',
@@ -147,7 +147,7 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     const defenseIncrement = calculateCommittedFatigueIncrementMilli({
       matchKind: input.matchKind,
       seconds: 10,
-      stamina: currentPlayer(session, defenseSide, defenseId).abilities.stamina,
+      stamina: currentPlayer(session, defenseSide, defenseId).abilityProfile.values.stamina,
       tactics: {
         pace: 'FAST',
         offensiveFocus: 'BALANCED',

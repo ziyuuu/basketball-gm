@@ -1,7 +1,11 @@
 import { compareUtf16CodeUnits } from '../../core/index.js';
 import { keyedDrawInt, type MatchDrawKey } from '../keyed-rng.js';
 import type { MatchInput } from '../schemas.js';
-import { stableSortPlayersById, type MatchPlayerSnapshot } from './effective-values.js';
+import {
+  modelBAbilityValues,
+  stableSortPlayersById,
+  type MatchPlayerSnapshot,
+} from './effective-values.js';
 import {
   MODEL_B_BEHAVIOR_REGISTRY,
   type BehaviorRegistryEntry,
@@ -401,7 +405,7 @@ export function selectModelBDoubleTeamActors(
   if (candidates.length < 2) return null;
   const ordered = [...candidates].sort(
     (left, right) =>
-      right.abilities.interiorDefense - left.abilities.interiorDefense ||
+      modelBAbilityValues(right).interiorDefense - modelBAbilityValues(left).interiorDefense ||
       compareUtf16CodeUnits(left.playerId, right.playerId),
   );
   return Object.freeze([ordered[0]!, ordered[1]!] as const);

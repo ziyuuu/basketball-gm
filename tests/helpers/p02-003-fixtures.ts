@@ -2,36 +2,48 @@ import {
   GENESIS_MATCH_ANCHOR_HASH,
   MatchInputSchema,
   MODEL_B_RULES_CONTENT_HASH,
+  MODEL_B_RULES_VERSION,
   deriveGameId,
   deriveMatchId,
   deriveMatchInputHash,
   type MatchInput,
+  type ModelBMatchInput,
+  type PhysicalMatchPlayerSnapshotV1,
 } from '../../packages/domain/src/match/index.js';
 
 type MatchKind = MatchInput['matchKind'];
-type MatchPlayer = MatchInput['homeTeam']['players'][number];
+type MatchPlayer = PhysicalMatchPlayerSnapshotV1;
 
 function makePlayer(playerId: string, index: number, rating = 50): MatchPlayer {
   const positions = ['PG', 'SG', 'SF', 'PF', 'C'] as const;
   const primaryPosition = positions[index % positions.length]!;
   const secondaryPosition = positions[(index + 1) % positions.length]!;
   return {
+    snapshotVersion: 'P02_MATCH_PLAYER_PHYSICAL_V1',
     playerId,
     primaryPosition,
     secondaryPosition,
-    abilities: {
-      finishing: rating,
-      shooting: rating,
-      ballHandling: rating,
-      playmaking: rating,
-      perimeterDefense: rating,
-      interiorDefense: rating,
-      rebounding: rating,
-      athleticism: rating,
-      stamina: rating,
-      tacticalUnderstanding: rating,
+    abilityProfile: {
+      version: 'P02_CORE_11_V1',
+      values: {
+        finishing: rating,
+        shooting: rating,
+        ballHandling: rating,
+        playmaking: rating,
+        perimeterDefense: rating,
+        interiorDefense: rating,
+        rebounding: rating,
+        athleticism: rating,
+        stamina: rating,
+        tacticalUnderstanding: rating,
+        strength: rating,
+      },
     },
-    bodyImpact: rating,
+    physicalProfile: {
+      version: 'HEIGHT_WINGSPAN_CM_V1',
+      heightCm: 178,
+      wingspanCm: 184,
+    },
     tendencies: {
       possessionParticipation: 50,
       passSelection: 50,
@@ -83,12 +95,12 @@ export function makeP02MatchInput(
     homeRating?: number;
     awayRating?: number;
   }> = {},
-): MatchInput {
+): ModelBMatchInput {
   const matchKind = options.matchKind ?? 'OFFICIAL';
   const gameIdentity = {
     rootSeed: options.rootSeed ?? 'p02-003-test-root',
     newGameDescriptor: { fixture: 'p02-003' },
-    rulesVersion: 'p02-003-v2.9-final',
+    rulesVersion: MODEL_B_RULES_VERSION,
     contentHashes: { modelB: MODEL_B_RULES_CONTENT_HASH },
   };
   const gameId = deriveGameId(gameIdentity);
@@ -170,5 +182,5 @@ export function makeP02MatchInput(
   const matchId = deriveMatchId(base as MatchInput);
   const withMatchId = { ...base, matchId } as MatchInput;
   const input = { ...withMatchId, matchInputHash: deriveMatchInputHash(withMatchId) } as MatchInput;
-  return MatchInputSchema.parse(input);
+  return MatchInputSchema.parse(input) as ModelBMatchInput;
 }

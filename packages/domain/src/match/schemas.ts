@@ -134,6 +134,10 @@ export const MatchAbilitiesSchema = z
   })
   .strict();
 
+export const PhysicalMatchAbilitiesV1Schema = MatchAbilitiesSchema.extend({
+  strength: z.number().int().min(0).max(100),
+}).strict();
+
 export const MatchTendenciesSchema = z
   .object({
     possessionParticipation: z.number().int().min(0).max(100),
@@ -165,7 +169,7 @@ export const ArchetypeTraitSchema = z.enum([
   'REBOUND_INSTINCT',
 ]);
 
-export const MatchPlayerSnapshotSchema = z
+export const LegacyMatchPlayerSnapshotSchema = z
   .object({
     playerId: NonEmptyStringSchema,
     primaryPosition: PositionSchema,
@@ -187,6 +191,50 @@ export const MatchPlayerSnapshotSchema = z
       );
     }
   });
+
+export const PhysicalMatchPlayerSnapshotV1Schema = z
+  .object({
+    snapshotVersion: z.literal('P02_MATCH_PLAYER_PHYSICAL_V1'),
+    playerId: NonEmptyStringSchema,
+    primaryPosition: PositionSchema,
+    secondaryPosition: PositionSchema.nullable(),
+    abilityProfile: z
+      .object({
+        version: z.literal('P02_CORE_11_V1'),
+        values: PhysicalMatchAbilitiesV1Schema,
+      })
+      .strict(),
+    physicalProfile: z
+      .object({
+        version: z.literal('HEIGHT_WINGSPAN_CM_V1'),
+        heightCm: z.number().int().min(140).max(220),
+        wingspanCm: z.number().int().min(140).max(235),
+      })
+      .strict(),
+    tendencies: MatchTendenciesSchema,
+    archetypeTrait: ArchetypeTraitSchema.nullable(),
+    fatigueMilli: MilliSchema,
+    chemistryMilli: MilliSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.secondaryPosition === value.primaryPosition) {
+      addIssue(
+        context,
+        ['secondaryPosition'],
+        'Secondary position must differ from primary position.',
+      );
+    }
+  });
+
+export const MatchPlayerSnapshotSchema = z.union([
+  LegacyMatchPlayerSnapshotSchema,
+  PhysicalMatchPlayerSnapshotV1Schema,
+]);
+
+export type LegacyMatchPlayerSnapshot = z.infer<typeof LegacyMatchPlayerSnapshotSchema>;
+export type PhysicalMatchPlayerSnapshotV1 = z.infer<typeof PhysicalMatchPlayerSnapshotV1Schema>;
+export type MatchPlayerSnapshotValue = z.infer<typeof MatchPlayerSnapshotSchema>;
 
 export const StartingLineupSchema = z
   .object({

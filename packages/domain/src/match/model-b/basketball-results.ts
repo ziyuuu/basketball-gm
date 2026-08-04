@@ -12,7 +12,11 @@ import {
 } from './behavior-selection.js';
 import type { MatchPlayerSnapshot } from './effective-values.js';
 import { calculateFreeThrowProbabilityMilli } from './probabilities.js';
-import { MODEL_B_PARAMETER_REGISTRY, type ModelBBehaviorId } from './registries.js';
+import {
+  MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY,
+  MODEL_B_PARAMETER_REGISTRY,
+  type ModelBBehaviorId,
+} from './registries.js';
 import { predictModelBEventId, type ModelBFactDraft, type ModelBSession } from './session.js';
 
 export type ModelBResolutionDraft = Readonly<{
@@ -119,6 +123,74 @@ export function buildModelBCreationFactDraft(
       possessionIndex: input.possessionIndex,
       segmentIndex: input.segmentIndex,
       nextBehaviorId: input.nextBehaviorId,
+    }),
+  });
+}
+
+export function buildModelBDefensiveActionFactDraft(
+  input: Readonly<{
+    sourceEventIndexes: readonly number[];
+    behaviorId: 'HELPD' | 'PRESS' | 'DOUBLET';
+    offenseSide: 'HOME' | 'AWAY';
+    defenseSide: 'HOME' | 'AWAY';
+    handlerId: string;
+    primaryDefenderId: string;
+    supportingDefenderIds: readonly string[];
+    result: 'SUCCESS' | 'NO_EFFECT' | 'FAILED_BREAKDOWN' | 'FOUL';
+    opportunityQualityDelta: number;
+    breakdownOpportunity: boolean;
+    period: number;
+    possessionIndex: number;
+    segmentIndex: number;
+  }>,
+): ModelBFactDraft {
+  if (input.offenseSide === input.defenseSide) {
+    throw new Error('DefensiveActionFact offense and defense sides must differ.');
+  }
+  if (new Set(input.supportingDefenderIds).size !== input.supportingDefenderIds.length) {
+    throw new Error('DefensiveActionFact supporting defenders must be unique.');
+  }
+  if (input.supportingDefenderIds.includes(input.primaryDefenderId)) {
+    throw new Error('A primary defender cannot also be a supporting defender.');
+  }
+  if (input.behaviorId === 'HELPD') {
+    const helpd = MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY.helpd;
+    const expectedDelta =
+      input.result === 'SUCCESS'
+        ? helpd.successfulDeltaMilli
+        : input.result === 'NO_EFFECT'
+          ? helpd.noEffectDeltaMilli
+          : null;
+    if (
+      input.supportingDefenderIds.length !== 1 ||
+      expectedDelta === null ||
+      input.opportunityQualityDelta !== expectedDelta ||
+      input.breakdownOpportunity
+    ) {
+      throw new Error(
+        'HELPD DefensiveActionFact requires one helper and exact SUCCESS/-6000 or NO_EFFECT/0 semantics.',
+      );
+    }
+  }
+  return Object.freeze({
+    factKind: 'EXPLANATION',
+    sourceEventIndexes: Object.freeze([...input.sourceEventIndexes]),
+    payload: Object.freeze({
+      type: 'DEFENSIVE_ACTION',
+      behaviorId: input.behaviorId,
+      offenseSide: input.offenseSide,
+      defenseSide: input.defenseSide,
+      handlerId: input.handlerId,
+      primaryDefenderId: input.primaryDefenderId,
+      supportingDefenderIds: Object.freeze(
+        [...input.supportingDefenderIds].sort(compareUtf16CodeUnits),
+      ),
+      result: input.result,
+      opportunityQualityDelta: input.opportunityQualityDelta,
+      breakdownOpportunity: input.breakdownOpportunity,
+      period: input.period,
+      possessionIndex: input.possessionIndex,
+      segmentIndex: input.segmentIndex,
     }),
   });
 }
