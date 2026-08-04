@@ -326,25 +326,30 @@ function assertStructuredFacts(
       }
     } else if (payload.type === 'DEFENSIVE_ACTION') {
       const defenseSide = possessionSide === 'HOME' ? 'AWAY' : 'HOME';
-      const defenseIds = new Set(
-        defenseSide === 'HOME'
-          ? session.input.homeTeam.registeredRosterIds
-          : session.input.awayTeam.registeredRosterIds,
+      const offenseLineupIds = new Set(
+        Object.values(
+          possessionSide === 'HOME' ? previousAnchor.lineups.home : previousAnchor.lineups.away,
+        ),
+      );
+      const defenseLineupIds = new Set(
+        Object.values(
+          defenseSide === 'HOME' ? previousAnchor.lineups.home : previousAnchor.lineups.away,
+        ),
       );
       if (
         fact.factKind !== 'EXPLANATION' ||
         payload.offenseSide !== possessionSide ||
         payload.defenseSide !== defenseSide ||
         typeof payload.handlerId !== 'string' ||
-        !possessionIds.has(payload.handlerId) ||
+        !offenseLineupIds.has(payload.handlerId) ||
         typeof payload.primaryDefenderId !== 'string' ||
-        !defenseIds.has(payload.primaryDefenderId) ||
+        !defenseLineupIds.has(payload.primaryDefenderId) ||
         !Array.isArray(payload.supportingDefenderIds) ||
         payload.supportingDefenderIds.some(
-          (playerId) => typeof playerId !== 'string' || !defenseIds.has(playerId),
+          (playerId) => typeof playerId !== 'string' || !defenseLineupIds.has(playerId),
         )
       ) {
-        throw new Error('DefensiveActionFact participants must bind the current offense/defense.');
+        throw new Error('DefensiveActionFact participants must bind the source Anchor lineups.');
       }
       const supportingDefenderIds = payload.supportingDefenderIds as string[];
       if (

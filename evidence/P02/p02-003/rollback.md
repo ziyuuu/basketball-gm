@@ -8,3 +8,7 @@ dependent successors; do not rewrite the shared branch history.
 If this work is ever merged, rollback must use a normal revert PR. Do not restore the superseded
 `81697e9d26e6bf5ea372b9fffdd427598fc3d87f` implementation as the task head, because it predates
 the approved v2.9-R1 and Erratum 01 authority.
+
+The post-B6R review remediation is an ordinary direct successor of the prior Candidate. If it must
+be withdrawn before merge, revert that successor normally while retaining the B1R-B6R history and
+the review record; do not force-push or restore the superseded v2.9 implementation.

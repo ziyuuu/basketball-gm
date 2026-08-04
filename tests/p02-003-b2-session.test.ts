@@ -7,7 +7,9 @@ import {
   MatchEventSchema,
   MatchFactSchema,
   MatchInputSchema,
+  MODEL_B_LEGACY_RULES_CONTENT_HASH,
   MODEL_B_RULES_CONTENT_HASH,
+  MODEL_B_RULES_VERSION,
   PhysicalMatchPlayerSnapshotV1Schema,
   assertModelBSessionInvariants,
   buildModelBCreationFactDraft,
@@ -16,6 +18,7 @@ import {
   commitModelBAutomatedDecision,
   commitModelBTransition,
   createModelBSession,
+  deriveGameId,
   deriveMatchId,
   deriveMatchInputHash,
   deriveMatchEventHash,
@@ -24,6 +27,21 @@ import {
   type ModelBMatchInput,
 } from '../packages/domain/src/match/index.js';
 import { makeP02MatchInput } from './helpers/p02-003-fixtures.js';
+
+function rematerializeMatchIdentity(input: MatchInput): MatchInput {
+  const withGameId = {
+    ...input,
+    gameId: deriveGameId(input.gameIdentity),
+  } as MatchInput;
+  const withMatchId = {
+    ...withGameId,
+    matchId: deriveMatchId(withGameId),
+  } as MatchInput;
+  return MatchInputSchema.parse({
+    ...withMatchId,
+    matchInputHash: deriveMatchInputHash(withMatchId),
+  });
+}
 
 describe('P02-003 B2 atomic MatchSession skeleton', () => {
   it('preserves the exact Legacy snapshot shape while adding a strict Physical union variant', () => {
@@ -135,6 +153,35 @@ describe('P02-003 B2 atomic MatchSession skeleton', () => {
     expect(() => createModelBSession(parsedMixed as unknown as ModelBMatchInput)).toThrow(
       /requires the .*Physical/i,
     );
+  });
+
+  it('binds the Model B entry to the declared R1 rules and content identity', () => {
+    const physical = makeP02MatchInput();
+
+    const wrongRulesVersion = structuredClone(physical);
+    wrongRulesVersion.gameIdentity.rulesVersion = 'p02-003-v2.9-r1-unknown';
+    expect(() =>
+      createModelBSession(
+        rematerializeMatchIdentity(wrongRulesVersion) as unknown as ModelBMatchInput,
+      ),
+    ).toThrow(new RegExp(MODEL_B_RULES_VERSION));
+
+    const missingModelBHash = structuredClone(physical);
+    delete missingModelBHash.gameIdentity.contentHashes.modelB;
+    missingModelBHash.gameIdentity.contentHashes.other = MODEL_B_RULES_CONTENT_HASH;
+    expect(() =>
+      createModelBSession(
+        rematerializeMatchIdentity(missingModelBHash) as unknown as ModelBMatchInput,
+      ),
+    ).toThrow(/content hash/i);
+
+    const wrongModelBHash = structuredClone(physical);
+    wrongModelBHash.gameIdentity.contentHashes.modelB = MODEL_B_LEGACY_RULES_CONTENT_HASH;
+    expect(() =>
+      createModelBSession(
+        rematerializeMatchIdentity(wrongModelBHash) as unknown as ModelBMatchInput,
+      ),
+    ).toThrow(/content hash/i);
   });
 
   it('creates a deterministic genesis Anchor with zero event-derived score and stats', () => {
@@ -329,6 +376,61 @@ describe('P02-003 B2 atomic MatchSession skeleton', () => {
         facts: [fact, fact],
       }),
     ).toThrow(/at most one DefensiveActionFact/);
+  });
+
+  it('rejects HELPD participants outside the source Anchor lineups', () => {
+    const session = createModelBSession(makeP02MatchInput());
+    const anchor = session.anchors.at(-1)!;
+    const offenseSide = anchor.possession.side;
+    const defenseSide = offenseSide === 'HOME' ? 'AWAY' : 'HOME';
+    const offenseTeam = offenseSide === 'HOME' ? session.input.homeTeam : session.input.awayTeam;
+    const defenseTeam = defenseSide === 'HOME' ? session.input.homeTeam : session.input.awayTeam;
+    const offenseLineup = anchor.lineups[offenseSide === 'HOME' ? 'home' : 'away'];
+    const defenseLineup = anchor.lineups[defenseSide === 'HOME' ? 'home' : 'away'];
+    const offenseBenchId = offenseTeam.registeredRosterIds.find(
+      (playerId) => !Object.values(offenseLineup).includes(playerId),
+    );
+    const defenseBenchId = defenseTeam.registeredRosterIds.find(
+      (playerId) => !Object.values(defenseLineup).includes(playerId),
+    );
+    expect(offenseBenchId).toBeDefined();
+    expect(defenseBenchId).toBeDefined();
+
+    const baseline = {
+      sourceEventIndexes: [0],
+      behaviorId: 'HELPD' as const,
+      offenseSide,
+      defenseSide,
+      handlerId: offenseLineup.PG,
+      primaryDefenderId: defenseLineup.PG,
+      supportingDefenderIds: [defenseLineup.C],
+      result: 'SUCCESS' as const,
+      opportunityQualityDelta: -6_000,
+      breakdownOpportunity: false,
+      period: anchor.period,
+      possessionIndex: anchor.possession.possessionIndex,
+      segmentIndex: anchor.possession.segmentIndex,
+    };
+    const snapshot = JSON.stringify(session);
+    for (const patch of [
+      { handlerId: offenseBenchId! },
+      { primaryDefenderId: defenseBenchId! },
+      { supportingDefenderIds: [defenseBenchId!] },
+    ]) {
+      expect(() =>
+        commitModelBTransition(session, {
+          eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 1 }],
+          facts: [buildModelBDefensiveActionFactDraft({ ...baseline, ...patch })],
+        }),
+      ).toThrow(/source Anchor lineup/i);
+      expect(JSON.stringify(session)).toBe(snapshot);
+    }
+    expect(() =>
+      buildModelBDefensiveActionFactDraft({
+        ...baseline,
+        supportingDefenderIds: [defenseLineup.PG],
+      }),
+    ).toThrow(/primary defender/i);
   });
 
   it('rejects a session whose otherwise valid event points across a non-adjacent Anchor', () => {

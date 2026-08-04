@@ -83,6 +83,24 @@ const POSITION_ORDER = Object.freeze(['PG', 'SG', 'SF', 'PF', 'C'] as const);
 export type ModelBLineup = MatchAnchor['lineups']['home'];
 export type ModelBDefensiveSlot = (typeof POSITION_ORDER)[number];
 
+export type ModelBBehaviorCandidateInput = Readonly<{
+  decisionPlayer: MatchPlayerSnapshot;
+  legalBehaviorIds: readonly ModelBBehaviorId[];
+  sceneAvailabilityMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
+  tacticalMultiplierMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
+  currentLineup?: ModelBLineup;
+  eligibleDefenderIds?: readonly string[];
+  onBallDefenderId?: string;
+  shotZone?: ModelBShotSelectionZone;
+}>;
+
+export type ModelBBehaviorSelectionInput = Readonly<{
+  context: ModelBDrawContext;
+  behaviorSelectionOrdinal: number;
+  safeFallbackBehaviorId: ModelBBehaviorId;
+}> &
+  ModelBBehaviorCandidateInput;
+
 export function deriveModelBDefensiveSlot(
   lineup: ModelBLineup,
   playerId: string,
@@ -244,16 +262,7 @@ export function calculateModelBBehaviorTendencyBasisPoints(
 }
 
 export function buildModelBBehaviorCandidates(
-  input: Readonly<{
-    decisionPlayer: MatchPlayerSnapshot;
-    legalBehaviorIds: readonly ModelBBehaviorId[];
-    sceneAvailabilityMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
-    tacticalMultiplierMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
-    currentLineup?: ModelBLineup;
-    eligibleDefenderIds?: readonly string[];
-    onBallDefenderId?: string;
-    shotZone?: ModelBShotSelectionZone;
-  }>,
+  input: ModelBBehaviorCandidateInput,
 ): readonly ModelBBehaviorCandidate[] {
   const legalIds = new Set(input.legalBehaviorIds);
   if (legalIds.size !== input.legalBehaviorIds.length) {
@@ -329,16 +338,7 @@ export function buildModelBBehaviorCandidates(
 }
 
 export function selectModelBBehavior(
-  input: Readonly<{
-    context: ModelBDrawContext;
-    behaviorSelectionOrdinal: number;
-    decisionPlayer: MatchPlayerSnapshot;
-    legalBehaviorIds: readonly ModelBBehaviorId[];
-    safeFallbackBehaviorId: ModelBBehaviorId;
-    sceneAvailabilityMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
-    tacticalMultiplierMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
-    shotZone?: ModelBShotSelectionZone;
-  }>,
+  input: ModelBBehaviorSelectionInput,
 ): ModelBWeightedSelection<ModelBBehaviorCandidate> {
   assertOrdinal(input.behaviorSelectionOrdinal, 0, 999, 'behaviorSelectionOrdinal');
   const candidates = buildModelBBehaviorCandidates(input);

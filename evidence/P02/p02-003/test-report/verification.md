@@ -19,7 +19,7 @@ pnpm --filter @sunny-court/web build
 pnpm --filter @sunny-court/sim-cli build
 ```
 
-The complete Vitest suite passes 22 test files / 240 tests with zero failures or skipped tests. A
+The complete Vitest suite passes 22 test files / 242 tests with zero failures or skipped tests. A
 separate JSON reporter run records 49 internal suites, all passing. The full repository quality
 gate passes Prettier, ESLint, TypeScript, boundary checks, Vitest, Web build, and CLI build. The two
 production builds were also run separately and passed.
@@ -28,7 +28,7 @@ production builds were also run separately and passed.
 
 The unchanged eight-file Legacy/P01-M1 matrix passes 133 tests. It includes the historical P01
 legal/rejection and replay contracts plus boundary fixtures. The six P02-002 contract files plus
-the B1R/B2R Physical identity files pass 59 tests across eight files. They verify exact Legacy
+the B1R/B2R Physical identity files pass 61 tests across eight files. They verify exact Legacy
 snapshot compatibility, strict Physical-only Model B input, no implicit conversion, and positive
 and negative MatchInput/hash identity behavior.
 
@@ -47,7 +47,18 @@ Frozen Legacy hashes remain exact:
 
 The Legacy batch completes 1,000/1,000 with zero failures, replay mismatches, calendar/operation
 violations, or illegal terminal states; 20 replay samples were checked. Measured elapsed time was
-`11615.35 ms`.
+`11901.11 ms`.
+
+## Post-B6R review-remediation verification
+
+The remediation adds two runtime negatives to `tests/p02-003-b2-session.test.ts` and one
+source-level TypeScript API contract. The B1R-B6R focused matrix passes 6 files / 73 tests. The
+P02-002 contracts plus B1R/B2R Physical identity matrix passes 8 files / 61 tests. An expanded
+Legacy/P01/P02 direct regression matrix passes 11 files / 153 tests.
+
+The full `pnpm check` run passes 22 files / 242 tests, Prettier, ESLint, TypeScript, boundary
+checks, and both production builds. The Web and CLI builds were also run separately. The two frozen
+three-year state/replay hash pairs remain exact, and the 1,000-run Legacy batch remains clean.
 
 ## Manifest verification
 

@@ -44,6 +44,7 @@ import {
   recalculateModelBEligibleLineupState,
   reduceModelBCommittedFatigue,
 } from './state-rules.js';
+import { MODEL_B_RULES_CONTENT_HASH, MODEL_B_RULES_VERSION } from './registries.js';
 
 type PhysicalizeMatchInput<T extends MatchInput> = T extends MatchInput
   ? Omit<T, 'homeTeam' | 'awayTeam'> & {
@@ -158,6 +159,14 @@ function makeAnchor(input: Omit<MatchAnchor, 'anchorHash' | 'effectiveFragmentHa
 
 export function createModelBSession(rawInput: ModelBMatchInput): ModelBSession {
   const input = MatchInputSchema.parse(rawInput);
+  if (input.gameIdentity.rulesVersion !== MODEL_B_RULES_VERSION) {
+    throw new Error(`Model B input requires the R1 rulesVersion ${MODEL_B_RULES_VERSION}.`);
+  }
+  if (input.gameIdentity.contentHashes.modelB !== MODEL_B_RULES_CONTENT_HASH) {
+    throw new Error(
+      `Model B input requires the R1 modelB content hash ${MODEL_B_RULES_CONTENT_HASH}.`,
+    );
+  }
   for (const [side, players] of [
     ['HOME', input.homeTeam.players],
     ['AWAY', input.awayTeam.players],
