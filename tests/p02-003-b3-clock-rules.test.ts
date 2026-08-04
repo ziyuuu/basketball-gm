@@ -7,6 +7,11 @@ import {
   commitModelBShotClockViolation,
   completeModelBPeriod,
   createModelBSession,
+  deriveEventId,
+  deriveFactId,
+  deriveMatchAnchorHash,
+  deriveMatchEventHash,
+  deriveMatchFactHash,
   keyedDrawUnitInterval,
   rebuildModelBShotClockSeconds,
   type ModelBSession,
@@ -58,6 +63,65 @@ function runCurrentPeriodToZero(session: ModelBSession): ModelBSession {
 }
 
 describe('P02-003 B3 clock and possession rules', () => {
+  it('binds the Physical genesis and every Event, Fact and Anchor identity to one coordinate chain', () => {
+    let session = createModelBSession(makeP02MatchInput({ rootSeed: 'b3-r1-identity' }));
+    const genesis = session.anchors[0]!;
+    expect(
+      session.input.homeTeam.players.every(
+        (player) => player.snapshotVersion === 'P02_MATCH_PLAYER_PHYSICAL_V1',
+      ),
+    ).toBe(true);
+    expect(
+      session.input.awayTeam.players.every(
+        (player) => player.snapshotVersion === 'P02_MATCH_PLAYER_PHYSICAL_V1',
+      ),
+    ).toBe(true);
+    expect(genesis.anchorHash).toBe(deriveMatchAnchorHash(genesis));
+    expect(genesis.eventCursor).toBe(0);
+
+    const handler = playerForCurrentSide(session);
+    session = commitModelBActiveSegment(session, {
+      eventPayloads: [
+        { type: 'CLOCK_ADVANCED', seconds: 30 },
+        { type: 'SHOT', shooterId: handler, zone: 'MID_RANGE', made: false },
+      ],
+      resolution: 'SAME_SIDE_DEAD_BALL',
+    });
+    session = commitModelBShotClockViolation(session, handler);
+
+    for (const [index, anchor] of session.anchors.entries()) {
+      expect(anchor.anchorHash).toBe(deriveMatchAnchorHash(anchor));
+      expect(anchor.previousAnchorHash).toBe(
+        index === 0 ? genesis.previousAnchorHash : session.anchors[index - 1]!.anchorHash,
+      );
+    }
+    for (const event of session.events) {
+      const previous = session.anchors.find(
+        (anchor) => anchor.anchorHash === event.previousAnchorHash,
+      )!;
+      const next = session.anchors.find((anchor) => anchor.anchorHash === event.nextAnchorHash)!;
+      expect(event.eventId).toBe(deriveEventId(event));
+      expect(event.eventHash).toBe(deriveMatchEventHash(event));
+      expect(event).toMatchObject({
+        period: previous.period,
+        possessionIndex: previous.possession.possessionIndex,
+        segmentIndex: previous.possession.segmentIndex,
+      });
+      expect(event.cursor).toBeGreaterThanOrEqual(previous.eventCursor);
+      expect(event.cursor).toBeLessThan(next.eventCursor);
+    }
+    for (const fact of session.facts) {
+      expect(fact.factId).toBe(deriveFactId(fact));
+      expect(fact.factHash).toBe(deriveMatchFactHash(fact));
+      const source = session.events.find((event) => event.eventId === fact.sourceEventIds[0])!;
+      expect(fact.payload).toMatchObject({
+        period: source.period,
+        possessionIndex: source.possessionIndex,
+        segmentIndex: source.segmentIndex,
+      });
+    }
+  });
+
   it('rebuilds the 30-second clock across same-side dead balls', () => {
     let session = createModelBSession(makeP02MatchInput());
     session = commitModelBActiveSegment(session, {
