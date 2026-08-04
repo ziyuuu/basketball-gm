@@ -4,9 +4,14 @@ import {
   MODEL_B_CREATION_EXIT_REGISTRY,
   MODEL_B_PASS_BEHAVIOR_IDS,
   buildModelBBehaviorCandidates,
+  calculateModelBDutyAdjustedSceneAvailabilityMilli,
   calculateAbilityBlendMilli,
+  deriveModelBBlockHelpCandidate,
+  deriveModelBDefensiveDuty,
+  deriveModelBDefensiveSlot,
   calculateModelBBehaviorTendencyBasisPoints,
   deriveModelBBoxoutActor,
+  deriveModelBPassInterceptionCandidate,
   modelBActorLocalIndex,
   modelBPassResultDrawKey,
   modelBReceiverLocalIndex,
@@ -17,6 +22,7 @@ import {
   selectModelBDefensiveMode,
   selectModelBDoubleTeamActors,
   selectModelBHandler,
+  selectModelBHelpDefender,
   selectModelBReceiverOrBeneficiary,
   type MatchPlayerSnapshot,
   type ModelBBehaviorId,
@@ -205,12 +211,14 @@ describe('P02-003 B4 handler and participant selection', () => {
     const creatorId = candidates[0]!.playerId;
     const first = selectModelBReceiverOrBeneficiary({
       context,
+      behaviorId: 'PASS',
       behaviorSelectionOrdinal: 1,
       candidates,
       excludedPlayerIds: [creatorId],
     });
     const reordered = selectModelBReceiverOrBeneficiary({
       context,
+      behaviorId: 'PASS',
       behaviorSelectionOrdinal: 1,
       candidates: [...candidates].reverse(),
       excludedPlayerIds: [creatorId],
@@ -224,11 +232,152 @@ describe('P02-003 B4 handler and participant selection', () => {
     expect(
       selectModelBReceiverOrBeneficiary({
         context,
+        behaviorId: 'PASS',
         behaviorSelectionOrdinal: 1,
         candidates: [candidates[0]!],
         excludedPlayerIds: [creatorId],
       }),
     ).toBeNull();
+    expect(() =>
+      selectModelBReceiverOrBeneficiary({
+        context,
+        behaviorId: 'HELPD',
+        behaviorSelectionOrdinal: 1,
+        candidates,
+        excludedPlayerIds: [],
+      }),
+    ).toThrow(/does not use a receiver or beneficiary draw/);
+  });
+
+  it('derives duty availability from the assigned lineup slot with exact half-up scaling', () => {
+    const lineup = input.awayTeam.startingLineup;
+    const defender = player(lineup.PG);
+    const executionBeforeSwitch = calculateAbilityBlendMilli(defender, 'HELP_DEFENSE');
+    expect(deriveModelBDefensiveSlot(lineup, defender.playerId)).toBe('PG');
+    expect(deriveModelBDefensiveDuty(lineup, defender.playerId)).toBe('POINT_OF_ATTACK');
+    expect(
+      calculateModelBDutyAdjustedSceneAvailabilityMilli({
+        ordinarySceneAvailabilityMilli: 555,
+        behaviorId: 'HELPD',
+        assignedSlot: 'PG',
+      }),
+    ).toBe(167);
+    const pointAvailability = buildModelBBehaviorCandidates({
+      decisionPlayer: defender,
+      legalBehaviorIds: ['HELPD'],
+      sceneAvailabilityMilliByBehavior: { HELPD: 555 },
+      currentLineup: lineup,
+    })[0]!;
+    const switched = { ...lineup, PG: lineup.C, C: lineup.PG };
+    expect(deriveModelBDefensiveDuty(switched, defender.playerId)).toBe('RIM_ANCHOR');
+    const anchorAvailability = buildModelBBehaviorCandidates({
+      decisionPlayer: defender,
+      legalBehaviorIds: ['HELPD'],
+      sceneAvailabilityMilliByBehavior: { HELPD: 555 },
+      currentLineup: switched,
+    })[0]!;
+    expect(pointAvailability.sceneAvailabilityMilli).toBe(167);
+    expect(anchorAvailability.sceneAvailabilityMilli).toBe(555);
+    expect(anchorAvailability.weight).toBeGreaterThan(pointAvailability.weight);
+    expect(calculateAbilityBlendMilli(defender, 'HELP_DEFENSE')).toBe(executionBeforeSwitch);
+    expect(() =>
+      buildModelBBehaviorCandidates({
+        decisionPlayer: defender,
+        legalBehaviorIds: ['HELPD'],
+      }),
+    ).toThrow(/current defensive lineup/);
+  });
+
+  it('selects the HELPD helper by assigned-slot weights at the reserved 3000 ordinal', () => {
+    const lineup = input.awayTeam.startingLineup;
+    const candidates = lineupPlayers('AWAY');
+    const selected = selectModelBHelpDefender({
+      context,
+      behaviorSelectionOrdinal: 7,
+      currentLineup: lineup,
+      candidates: [...candidates].reverse(),
+      onBallDefenderId: lineup.PG,
+    });
+    expect(selected).toEqual(
+      selectModelBHelpDefender({
+        context,
+        behaviorSelectionOrdinal: 7,
+        currentLineup: lineup,
+        candidates,
+        onBallDefenderId: lineup.PG,
+      }),
+    );
+    expect(selected?.value.playerId).not.toBe(lineup.PG);
+    expect(selected?.totalWeight).toBe(2_850);
+    expect(selected?.drawKey).toMatchObject({
+      drawKind: 'BALL_HANDLER',
+      localIndex: 3_007,
+    });
+    expect(
+      selectModelBHelpDefender({
+        context,
+        behaviorSelectionOrdinal: 7,
+        currentLineup: lineup,
+        candidates: [player(lineup.PG)],
+        onBallDefenderId: lineup.PG,
+      }),
+    ).toBeNull();
+    expect(() =>
+      selectModelBActor({
+        context,
+        behaviorId: 'HELPD',
+        behaviorSelectionOrdinal: 7,
+        candidates,
+        excludedPlayerIds: [lineup.PG],
+      }),
+    ).toThrow(/does not use a random actor draw/);
+  });
+
+  it('selects block help and PASS interception deterministically from duty plus execution', () => {
+    const lineup = input.awayTeam.startingLineup;
+    const candidates = lineupPlayers('AWAY');
+    expect(
+      deriveModelBBlockHelpCandidate({
+        currentLineup: lineup,
+        candidates: [...candidates].reverse(),
+        directDefenderId: lineup.PG,
+      })?.playerId,
+    ).toBe(lineup.C);
+    expect(
+      deriveModelBPassInterceptionCandidate({
+        currentLineup: lineup,
+        candidates: [...candidates].reverse(),
+      })?.playerId,
+    ).toBe(lineup.PG);
+
+    const center = player(lineup.C);
+    const powerForward = player(lineup.PF);
+    const tiedPowerForward = withPlayer(powerForward, {
+      abilityProfile: {
+        ...powerForward.abilityProfile,
+        values: {
+          ...powerForward.abilityProfile.values,
+          interiorDefense: powerForward.abilityProfile.values.interiorDefense + 6,
+          athleticism: powerForward.abilityProfile.values.athleticism + 2,
+        },
+      },
+    });
+    expect(calculateAbilityBlendMilli(tiedPowerForward, 'BLOCK') + 5_000).toBe(
+      calculateAbilityBlendMilli(center, 'BLOCK') + 8_000,
+    );
+    const tied = deriveModelBBlockHelpCandidate({
+      currentLineup: lineup,
+      candidates: [center, tiedPowerForward],
+      directDefenderId: lineup.PG,
+    });
+    expect(tied?.playerId).toBe([center.playerId, tiedPowerForward.playerId].sort()[0]);
+    expect(
+      deriveModelBBlockHelpCandidate({
+        currentLineup: lineup,
+        candidates: [tiedPowerForward, center],
+        directDefenderId: lineup.PG,
+      }),
+    ).toEqual(tied);
   });
 
   it('binds actor keys to behavior selection ordinals, not prior branch calls', () => {

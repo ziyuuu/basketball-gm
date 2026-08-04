@@ -1,13 +1,15 @@
-import { compareUtf16CodeUnits } from '../../core/index.js';
+import { compareUtf16CodeUnits, roundHalfUp } from '../../core/index.js';
 import { keyedDrawInt, type MatchDrawKey } from '../keyed-rng.js';
-import type { MatchInput } from '../schemas.js';
+import type { MatchAnchor, MatchInput } from '../schemas.js';
 import {
+  calculateAbilityBlendMilli,
   modelBAbilityValues,
   stableSortPlayersById,
   type MatchPlayerSnapshot,
 } from './effective-values.js';
 import {
   MODEL_B_BEHAVIOR_REGISTRY,
+  MODEL_B_DEFENSIVE_DUTY_REGISTRY,
   type BehaviorRegistryEntry,
   type ModelBBehaviorId,
 } from './registries.js';
@@ -63,12 +65,54 @@ const RANDOM_ACTOR_BEHAVIORS = new Set<ModelBBehaviorId>([
   'SCREEN',
   'CUT',
   'DOUBLECREATE',
-  'HELPD',
   'PRESS',
   'STLTRY',
 ]);
 
+const RANDOM_RECEIVER_OR_BENEFICIARY_BEHAVIORS = new Set<ModelBBehaviorId>([
+  ...MODEL_B_PASS_BEHAVIOR_IDS,
+  'SCREEN',
+  'CUT',
+  'DOUBLECREATE',
+  'HIGH_POST_CREATION',
+]);
+
+const DUTY_ADJUSTED_BEHAVIORS = new Set<ModelBBehaviorId>(['HELPD', 'CONTEST', 'PRESS', 'STLTRY']);
+
 const POSITION_ORDER = Object.freeze(['PG', 'SG', 'SF', 'PF', 'C'] as const);
+export type ModelBLineup = MatchAnchor['lineups']['home'];
+export type ModelBDefensiveSlot = (typeof POSITION_ORDER)[number];
+
+export function deriveModelBDefensiveSlot(
+  lineup: ModelBLineup,
+  playerId: string,
+): ModelBDefensiveSlot {
+  const slot = POSITION_ORDER.find((candidate) => lineup[candidate] === playerId);
+  if (slot === undefined) throw new Error(`${playerId} does not occupy a current lineup slot.`);
+  return slot;
+}
+
+export function deriveModelBDefensiveDuty(
+  lineup: ModelBLineup,
+  playerId: string,
+): (typeof MODEL_B_DEFENSIVE_DUTY_REGISTRY)[ModelBDefensiveSlot]['duty'] {
+  return MODEL_B_DEFENSIVE_DUTY_REGISTRY[deriveModelBDefensiveSlot(lineup, playerId)].duty;
+}
+
+export function calculateModelBDutyAdjustedSceneAvailabilityMilli(
+  input: Readonly<{
+    ordinarySceneAvailabilityMilli: number;
+    behaviorId: 'HELPD' | 'CONTEST' | 'PRESS' | 'STLTRY';
+    assignedSlot: ModelBDefensiveSlot;
+  }>,
+): number {
+  assertFactor(input.ordinarySceneAvailabilityMilli, 'ordinary scene availability', 1_000);
+  return roundHalfUp(
+    input.ordinarySceneAvailabilityMilli *
+      MODEL_B_DEFENSIVE_DUTY_REGISTRY[input.assignedSlot].availabilityMilli[input.behaviorId],
+    1_000,
+  );
+}
 
 function assertOrdinal(value: number, minimum: number, maximum: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
@@ -205,6 +249,7 @@ export function buildModelBBehaviorCandidates(
     legalBehaviorIds: readonly ModelBBehaviorId[];
     sceneAvailabilityMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
     tacticalMultiplierMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
+    currentLineup?: ModelBLineup;
     shotZone?: ModelBShotSelectionZone;
   }>,
 ): readonly ModelBBehaviorCandidate[] {
@@ -219,7 +264,26 @@ export function buildModelBBehaviorCandidates(
         behavior.selectable && legalIds.has(behavior.behaviorId as ModelBBehaviorId),
     ).map((behavior) => {
       const behaviorId = behavior.behaviorId as ModelBBehaviorId;
-      const sceneAvailabilityMilli = input.sceneAvailabilityMilliByBehavior?.[behaviorId] ?? 1_000;
+      const ordinarySceneAvailabilityMilli =
+        input.sceneAvailabilityMilliByBehavior?.[behaviorId] ?? 1_000;
+      assertFactor(
+        ordinarySceneAvailabilityMilli,
+        `${behaviorId} ordinary scene availability`,
+        1_000,
+      );
+      if (DUTY_ADJUSTED_BEHAVIORS.has(behaviorId) && input.currentLineup === undefined) {
+        throw new Error(`${behaviorId} requires the current defensive lineup.`);
+      }
+      const sceneAvailabilityMilli = DUTY_ADJUSTED_BEHAVIORS.has(behaviorId)
+        ? calculateModelBDutyAdjustedSceneAvailabilityMilli({
+            ordinarySceneAvailabilityMilli,
+            behaviorId: behaviorId as 'HELPD' | 'CONTEST' | 'PRESS' | 'STLTRY',
+            assignedSlot: deriveModelBDefensiveSlot(
+              input.currentLineup!,
+              input.decisionPlayer.playerId,
+            ),
+          })
+        : ordinarySceneAvailabilityMilli;
       const tacticalMultiplierMilli =
         input.tacticalMultiplierMilliByBehavior?.[behaviorId] ?? 1_000;
       assertFactor(sceneAvailabilityMilli, `${behaviorId} scene availability`, 1_000);
@@ -352,11 +416,15 @@ export function selectModelBHandler(
 export function selectModelBReceiverOrBeneficiary(
   input: Readonly<{
     context: ModelBDrawContext;
+    behaviorId: ModelBBehaviorId;
     behaviorSelectionOrdinal: number;
     candidates: readonly MatchPlayerSnapshot[];
     excludedPlayerIds: readonly string[];
   }>,
 ): ModelBWeightedSelection<MatchPlayerSnapshot> | null {
+  if (!RANDOM_RECEIVER_OR_BENEFICIARY_BEHAVIORS.has(input.behaviorId)) {
+    throw new Error(`Behavior ${input.behaviorId} does not use a receiver or beneficiary draw.`);
+  }
   const excluded = new Set(input.excludedPlayerIds);
   const candidates = stableSortPlayersById(
     input.candidates.filter(({ playerId }) => !excluded.has(playerId)),
@@ -371,6 +439,37 @@ export function selectModelBReceiverOrBeneficiary(
       modelBReceiverLocalIndex(input.behaviorSelectionOrdinal),
     ),
     candidates[0]!,
+  );
+}
+
+export function selectModelBHelpDefender(
+  input: Readonly<{
+    context: ModelBDrawContext;
+    behaviorSelectionOrdinal: number;
+    currentLineup: ModelBLineup;
+    candidates: readonly MatchPlayerSnapshot[];
+    onBallDefenderId: string;
+  }>,
+): ModelBWeightedSelection<MatchPlayerSnapshot> | null {
+  const lineupIds = new Set(Object.values(input.currentLineup));
+  if (!lineupIds.has(input.onBallDefenderId)) {
+    throw new Error('The HELPD on-ball defender must occupy a current lineup slot.');
+  }
+  const candidates = stableSortPlayersById(
+    input.candidates.filter(
+      ({ playerId }) => lineupIds.has(playerId) && playerId !== input.onBallDefenderId,
+    ),
+  );
+  if (candidates.length === 0) return null;
+  return weightedSelection(
+    candidates,
+    candidates.map(
+      ({ playerId }) =>
+        MODEL_B_DEFENSIVE_DUTY_REGISTRY[deriveModelBDefensiveSlot(input.currentLineup, playerId)]
+          .helpSelectionWeight,
+    ),
+    drawKey(input.context, 'BALL_HANDLER', modelBActorLocalIndex(input.behaviorSelectionOrdinal)),
+    null,
   );
 }
 
@@ -433,6 +532,62 @@ export function deriveModelBBoxoutActor(
       input.personalReboundExecutionMilliByPlayerId[left.playerId]!;
     return executionDifference || compareUtf16CodeUnits(left.playerId, right.playerId);
   })[0]!;
+}
+
+function deterministicDutyCandidate(
+  input: Readonly<{
+    currentLineup: ModelBLineup;
+    candidates: readonly MatchPlayerSnapshot[];
+    excludedPlayerIds?: readonly string[];
+    executionBlend: 'BLOCK' | 'PASS_INTERCEPTION';
+    modifier: 'blockCandidateModifierMilli' | 'passInterceptionCandidateModifierMilli';
+  }>,
+): MatchPlayerSnapshot | null {
+  const lineupIds = new Set(Object.values(input.currentLineup));
+  const excludedIds = new Set(input.excludedPlayerIds ?? []);
+  const candidates = input.candidates.filter(
+    ({ playerId }) => lineupIds.has(playerId) && !excludedIds.has(playerId),
+  );
+  if (candidates.length === 0) return null;
+  return [...candidates].sort((left, right) => {
+    const score = (player: MatchPlayerSnapshot): number => {
+      const slot = deriveModelBDefensiveSlot(input.currentLineup, player.playerId);
+      return (
+        calculateAbilityBlendMilli(player, input.executionBlend) +
+        MODEL_B_DEFENSIVE_DUTY_REGISTRY[slot][input.modifier]
+      );
+    };
+    return score(right) - score(left) || compareUtf16CodeUnits(left.playerId, right.playerId);
+  })[0]!;
+}
+
+export function deriveModelBBlockHelpCandidate(
+  input: Readonly<{
+    currentLineup: ModelBLineup;
+    candidates: readonly MatchPlayerSnapshot[];
+    directDefenderId: string;
+  }>,
+): MatchPlayerSnapshot | null {
+  deriveModelBDefensiveSlot(input.currentLineup, input.directDefenderId);
+  return deterministicDutyCandidate({
+    ...input,
+    excludedPlayerIds: [input.directDefenderId],
+    executionBlend: 'BLOCK',
+    modifier: 'blockCandidateModifierMilli',
+  });
+}
+
+export function deriveModelBPassInterceptionCandidate(
+  input: Readonly<{
+    currentLineup: ModelBLineup;
+    candidates: readonly MatchPlayerSnapshot[];
+  }>,
+): MatchPlayerSnapshot | null {
+  return deterministicDutyCandidate({
+    ...input,
+    executionBlend: 'PASS_INTERCEPTION',
+    modifier: 'passInterceptionCandidateModifierMilli',
+  });
 }
 
 export function resolveModelBDirectOpponent(
