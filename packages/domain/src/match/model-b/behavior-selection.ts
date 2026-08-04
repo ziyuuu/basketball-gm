@@ -250,6 +250,8 @@ export function buildModelBBehaviorCandidates(
     sceneAvailabilityMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
     tacticalMultiplierMilliByBehavior?: Partial<Record<ModelBBehaviorId, number>>;
     currentLineup?: ModelBLineup;
+    eligibleDefenderIds?: readonly string[];
+    onBallDefenderId?: string;
     shotZone?: ModelBShotSelectionZone;
   }>,
 ): readonly ModelBBehaviorCandidate[] {
@@ -264,7 +266,7 @@ export function buildModelBBehaviorCandidates(
         behavior.selectable && legalIds.has(behavior.behaviorId as ModelBBehaviorId),
     ).map((behavior) => {
       const behaviorId = behavior.behaviorId as ModelBBehaviorId;
-      const ordinarySceneAvailabilityMilli =
+      let ordinarySceneAvailabilityMilli =
         input.sceneAvailabilityMilliByBehavior?.[behaviorId] ?? 1_000;
       assertFactor(
         ordinarySceneAvailabilityMilli,
@@ -273,6 +275,20 @@ export function buildModelBBehaviorCandidates(
       );
       if (DUTY_ADJUSTED_BEHAVIORS.has(behaviorId) && input.currentLineup === undefined) {
         throw new Error(`${behaviorId} requires the current defensive lineup.`);
+      }
+      if (behaviorId === 'HELPD') {
+        if (input.eligibleDefenderIds === undefined || input.onBallDefenderId === undefined) {
+          throw new Error('HELPD requires the current eligible defenders and on-ball defender.');
+        }
+        deriveModelBDefensiveSlot(input.currentLineup!, input.onBallDefenderId);
+        if (!input.eligibleDefenderIds.includes(input.onBallDefenderId)) {
+          throw new Error('HELPD requires an eligible on-ball defender.');
+        }
+        const lineupIds = new Set(Object.values(input.currentLineup!));
+        const hasHelper = input.eligibleDefenderIds.some(
+          (playerId) => lineupIds.has(playerId) && playerId !== input.onBallDefenderId,
+        );
+        if (!hasHelper) ordinarySceneAvailabilityMilli = 0;
       }
       const sceneAvailabilityMilli = DUTY_ADJUSTED_BEHAVIORS.has(behaviorId)
         ? calculateModelBDutyAdjustedSceneAvailabilityMilli({

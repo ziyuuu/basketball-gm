@@ -267,6 +267,8 @@ describe('P02-003 B4 handler and participant selection', () => {
       legalBehaviorIds: ['HELPD'],
       sceneAvailabilityMilliByBehavior: { HELPD: 555 },
       currentLineup: lineup,
+      eligibleDefenderIds: Object.values(lineup),
+      onBallDefenderId: defender.playerId,
     })[0]!;
     const switched = { ...lineup, PG: lineup.C, C: lineup.PG };
     expect(deriveModelBDefensiveDuty(switched, defender.playerId)).toBe('RIM_ANCHOR');
@@ -275,6 +277,8 @@ describe('P02-003 B4 handler and participant selection', () => {
       legalBehaviorIds: ['HELPD'],
       sceneAvailabilityMilliByBehavior: { HELPD: 555 },
       currentLineup: switched,
+      eligibleDefenderIds: Object.values(switched),
+      onBallDefenderId: defender.playerId,
     })[0]!;
     expect(pointAvailability.sceneAvailabilityMilli).toBe(167);
     expect(anchorAvailability.sceneAvailabilityMilli).toBe(555);

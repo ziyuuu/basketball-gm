@@ -7,6 +7,7 @@ import {
   MatchEffectSchema,
   MatchInputSchema,
   assertModelBSessionInvariants,
+  buildModelBBehaviorCandidates,
   buildModelBFoulOutBoundaryPlan,
   buildModelBNeutralRotationPlan,
   buildModelBOpponentPolicyPlan,
@@ -17,10 +18,13 @@ import {
   completeModelBPeriod,
   createModelBSession,
   deriveEffectKey,
+  deriveModelBDefensiveDuty,
   deriveMatchInputHash,
   eligibleModelBLineupPlayerIds,
+  selectModelBBehavior,
+  selectModelBHelpDefender,
   type MatchEffect,
-  type MatchInput,
+  type ModelBMatchInput,
   type ModelBSession,
 } from '../packages/domain/src/match/index.js';
 import { makeP02MatchInput } from './helpers/p02-003-fixtures.js';
@@ -35,12 +39,15 @@ function oppositeSide(side: MatchSide): MatchSide {
   return side === 'HOME' ? 'AWAY' : 'HOME';
 }
 
-function rematerializeInput(input: MatchInput, mutate: (draft: MatchInput) => void): MatchInput {
+function rematerializeInput(
+  input: ModelBMatchInput,
+  mutate: (draft: ModelBMatchInput) => void,
+): ModelBMatchInput {
   const draft = structuredClone(input);
   mutate(draft);
   draft.matchInputHash = GENESIS_MATCH_ANCHOR_HASH;
   draft.matchInputHash = deriveMatchInputHash(draft);
-  return MatchInputSchema.parse(draft);
+  return MatchInputSchema.parse(draft) as ModelBMatchInput;
 }
 
 function currentPlayer(session: ModelBSession, side: MatchSide, playerId: string) {
@@ -250,6 +257,19 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     const replaced = commitModelBTransition(fouledOut, {
       eventPayloads: plan.eventPayloads,
     });
+    const incomingPlayer = currentPlayer(replaced, defenseSide, plan.substitutions[0]!.inPlayerId);
+    expect(incomingPlayer).toMatchObject({
+      snapshotVersion: 'P02_MATCH_PLAYER_PHYSICAL_V1',
+      abilityProfile: { version: 'P02_CORE_11_V1' },
+      physicalProfile: { version: 'HEIGHT_WINGSPAN_CM_V1' },
+    });
+    expect(
+      deriveModelBDefensiveDuty(
+        replaced.anchors.at(-1)!.lineups[sideKey(defenseSide)],
+        incomingPlayer.playerId,
+      ),
+    ).toBe('POINT_OF_ATTACK');
+    expect(replaced.input).toBe(fouledOut.input);
     expect(Object.values(replaced.anchors.at(-1)!.lineups[sideKey(defenseSide)])).not.toContain(
       outPlayerId,
     );
@@ -304,6 +324,25 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     expect(playerSeconds(session, shortSide) - shortSecondsBefore).toBe(40);
     expect(playerSeconds(session, fullSide) - fullSecondsBefore).toBe(50);
 
+    while (foulOuts < 9) {
+      const playerId = eligibleModelBLineupPlayerIds(session.anchors.at(-1)!, shortSide)[0]!;
+      session = foulOutPlayer(session, shortSide, playerId);
+      const plan = buildModelBFoulOutBoundaryPlan(session);
+      if (plan.eventPayloads.length > 0) {
+        session = commitModelBTransition(session, { eventPayloads: plan.eventPayloads });
+      }
+      foulOuts += 1;
+    }
+    expect(eligibleModelBLineupPlayerIds(session.anchors.at(-1)!, shortSide)).toHaveLength(3);
+    expect(calculateModelBShortHandedDefensePenaltyMilli(session.anchors.at(-1)!, shortSide)).toBe(
+      -8_000,
+    );
+    const threePlayerSeconds = playerSeconds(session, shortSide);
+    session = commitModelBTransition(session, {
+      eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 5 }],
+    });
+    expect(playerSeconds(session, shortSide) - threePlayerSeconds).toBe(15);
+
     while (foulOuts < 10) {
       const playerId = eligibleModelBLineupPlayerIds(session.anchors.at(-1)!, shortSide)[0]!;
       session = foulOutPlayer(session, shortSide, playerId);
@@ -314,8 +353,68 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
       foulOuts += 1;
     }
     expect(eligibleModelBLineupPlayerIds(session.anchors.at(-1)!, shortSide)).toHaveLength(2);
+    expect(calculateModelBShortHandedDefensePenaltyMilli(session.anchors.at(-1)!, shortSide)).toBe(
+      -12_000,
+    );
+    const twoPlayerSeconds = playerSeconds(session, shortSide);
+    session = commitModelBTransition(session, {
+      eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 5 }],
+    });
+    expect(playerSeconds(session, shortSide) - twoPlayerSeconds).toBe(10);
+    expect(
+      [...session.input.homeTeam.players, ...session.input.awayTeam.players].every(
+        (player) =>
+          player.snapshotVersion === 'P02_MATCH_PLAYER_PHYSICAL_V1' &&
+          player.abilityProfile.version === 'P02_CORE_11_V1' &&
+          player.physicalProfile.version === 'HEIGHT_WINGSPAN_CM_V1',
+      ),
+    ).toBe(true);
     const finalEligible = eligibleModelBLineupPlayerIds(session.anchors.at(-1)!, shortSide)[0]!;
     session = foulOutPlayer(session, shortSide, finalEligible);
+    const oneEligible = eligibleModelBLineupPlayerIds(session.anchors.at(-1)!, shortSide);
+    expect(oneEligible).toHaveLength(1);
+    const shortLineup = session.anchors.at(-1)!.lineups[sideKey(shortSide)];
+    const soleDefender = currentPlayer(session, shortSide, oneEligible[0]!);
+    expect(
+      buildModelBBehaviorCandidates({
+        decisionPlayer: soleDefender,
+        legalBehaviorIds: ['HELPD', 'CONTEST'],
+        currentLineup: shortLineup,
+        eligibleDefenderIds: oneEligible,
+        onBallDefenderId: soleDefender.playerId,
+      }).find(({ behavior }) => behavior.behaviorId === 'HELPD')?.sceneAvailabilityMilli,
+    ).toBe(0);
+    expect(
+      selectModelBHelpDefender({
+        context: {
+          matchSeed: session.input.matchSeed,
+          period: session.anchors.at(-1)!.period,
+          possessionIndex: session.anchors.at(-1)!.possession.possessionIndex,
+          segmentIndex: session.anchors.at(-1)!.possession.segmentIndex,
+        },
+        behaviorSelectionOrdinal: 0,
+        currentLineup: shortLineup,
+        candidates: [soleDefender],
+        onBallDefenderId: soleDefender.playerId,
+      }),
+    ).toBeNull();
+    expect(
+      selectModelBBehavior({
+        context: {
+          matchSeed: session.input.matchSeed,
+          period: session.anchors.at(-1)!.period,
+          possessionIndex: session.anchors.at(-1)!.possession.possessionIndex,
+          segmentIndex: session.anchors.at(-1)!.possession.segmentIndex,
+        },
+        behaviorSelectionOrdinal: 0,
+        decisionPlayer: soleDefender,
+        legalBehaviorIds: ['HELPD', 'CONTEST'],
+        safeFallbackBehaviorId: 'CONTEST',
+        currentLineup: shortLineup,
+        eligibleDefenderIds: oneEligible,
+        onBallDefenderId: soleDefender.playerId,
+      }).value.behavior.behaviorId,
+    ).toBe('CONTEST');
     const forfeit = buildModelBFoulOutBoundaryPlan(session);
     expect(forfeit).toMatchObject({
       forfeitingSide: shortSide,
@@ -336,6 +435,41 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     expect(() => assertModelBSessionInvariants(completed)).not.toThrow();
   });
 
+  it('continues committed Physical fatigue accumulation into overtime', () => {
+    let session = createModelBSession(makeP02MatchInput({ rootSeed: 'b6-overtime-fatigue' }));
+    for (let period = 1; period <= 4; period += 1) {
+      session = commitModelBTransition(session, {
+        eventPayloads: [
+          { type: 'CLOCK_ADVANCED', seconds: session.anchors.at(-1)!.periodClockSeconds },
+        ],
+      });
+      session = completeModelBPeriod(session);
+    }
+    expect(session.anchors.at(-1)).toMatchObject({
+      period: 5,
+      periodClockSeconds: 300,
+      status: 'IN_PROGRESS',
+    });
+    const anchor = session.anchors.at(-1)!;
+    const side = anchor.possession.side;
+    const playerId = anchor.lineups[sideKey(side)].PG;
+    const before = anchor.fatigueMilliByPlayer[playerId]!;
+    const increment = calculateCommittedFatigueIncrementMilli({
+      matchKind: session.input.matchKind,
+      seconds: 10,
+      stamina: currentPlayer(session, side, playerId).abilityProfile.values.stamina,
+      tactics: anchor.effectiveFragment.tactics[sideKey(side)],
+    });
+    session = commitModelBTransition(session, {
+      eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 10 }],
+    });
+    expect(session.anchors.at(-1)!.fatigueMilliByPlayer[playerId]).toBe(before + increment);
+    expect(currentPlayer(session, side, playerId).snapshotVersion).toBe(
+      'P02_MATCH_PLAYER_PHYSICAL_V1',
+    );
+    expect(() => assertModelBSessionInvariants(session)).not.toThrow();
+  });
+
   it('keeps the deterministic fatigue rotation explicitly internal/test and INSTANT-only', () => {
     const highFatigueInput = rematerializeInput(makeP02MatchInput(), (draft) => {
       for (const team of [draft.homeTeam, draft.awayTeam]) {
@@ -354,6 +488,24 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     expect(plan).toEqual(buildModelBNeutralRotationPlan(atDeadBall));
     expect(plan.substitutions.every((substitution) => !substitution.forced)).toBe(true);
     const rotated = commitModelBTransition(atDeadBall, { eventPayloads: plan.eventPayloads });
+    const dutyBySlot = {
+      PG: 'POINT_OF_ATTACK',
+      SG: 'PERIMETER_INTERCEPTOR',
+      SF: 'WING_HELPER',
+      PF: 'RIM_HELPER',
+      C: 'RIM_ANCHOR',
+    } as const;
+    for (const substitution of plan.substitutions) {
+      expect(
+        deriveModelBDefensiveDuty(
+          rotated.anchors.at(-1)!.lineups[sideKey(substitution.side)],
+          substitution.inPlayerId,
+        ),
+      ).toBe(dutyBySlot[substitution.position]);
+      expect(
+        currentPlayer(rotated, substitution.side, substitution.inPlayerId).snapshotVersion,
+      ).toBe('P02_MATCH_PLAYER_PHYSICAL_V1');
+    }
     expect(() => assertModelBSessionInvariants(rotated)).not.toThrow();
 
     const fullCoachInput = rematerializeInput(highFatigueInput, (draft) => {
