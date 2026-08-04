@@ -16,7 +16,7 @@
 - The first playable proof is a no-UI, no-API, three-school-year simulation.
 - P00/P01 engineering integrity is frozen at `main@6547fbf51b2a440fd9602eed82c869d70b1181e1`.
 - P01 attributes, training values, budget values, reputation values, automatic roster selection, and match model A are gameplay placeholders, not frozen design.
-- The Owner-approved P02 gameplay authority is `docs/P02_GAMEPLAY_BASELINE.md` v1.2, as narrowly amended for P02-003 and downstream player-model work by `docs/design/P02-003/v2.9-r1-final/P02_GAMEPLAY_BASELINE_AMENDMENT.md`. Do not reinterpret it from superseded vision or audit drafts.
+- The Owner-approved P02 gameplay authority is `docs/P02_GAMEPLAY_BASELINE.md` v1.2, as narrowly amended for P02-003 and downstream player-model work by `docs/design/P02-003/v2.9-r1-final/P02_GAMEPLAY_BASELINE_AMENDMENT.md`. For P02-003, versioned files under `docs/design/P02-003/v2.9-r1-final/errata/` take precedence over the exact clauses they correct. Do not reinterpret the authority from superseded vision or audit drafts.
 - The Owner-approved implementation authority is `docs/P02_DEVELOPMENT_PLAN.md` v1.2. Implement it through one unblocked GitHub Issue and one independently reviewable PR at a time.
 - P02 has exactly 12 active players; its initial fixed fixture is 12 first-year players, and the formal/friendly match roster is the whole active team. Any 22-player value under Legacy P01 code or P00/P01 evidence is historical regression data, not a current product rule.
 - P02 targets one simplified quarter/possession-chain match model. Model A remains an engineering regression baseline; model C is not an MVP implementation requirement.
