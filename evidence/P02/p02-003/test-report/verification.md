@@ -19,7 +19,7 @@ pnpm --filter @sunny-court/web build
 pnpm --filter @sunny-court/sim-cli build
 ```
 
-The complete Vitest suite passes 22 test files / 242 tests with zero failures or skipped tests. A
+The complete Vitest suite passes 23 test files / 246 tests with zero failures or skipped tests. A
 separate JSON reporter run records 49 internal suites, all passing. The full repository quality
 gate passes Prettier, ESLint, TypeScript, boundary checks, Vitest, Web build, and CLI build. The two
 production builds were also run separately and passed.
@@ -65,3 +65,18 @@ three-year state/replay hash pairs remain exact, and the 1,000-run Legacy batch 
 P00, P01, P01-M1, and the pre-evidence P02 manifest all validate before adding this record. After
 the P02-003 evidence set is complete, the P02 manifest is regenerated and validated again. The R1
 design and Erratum 01 manifests are also validated without editing their authority files.
+
+## B7 runner/protocol/replay remediation verification
+
+The B7 runner no longer emits a fixed Q4 score and otherwise-only `UNFORCED_DEAD_BALL` sequence.
+It invokes the accepted behavior selection, execution-probability, pass/shot/rebound/foul/free-throw
+and attribution/Fact primitives, including HELPD, steal, block and last-pass assist paths. Its only
+public finalization result is the frozen `MatchProtocolBundleSchema` shape with `input`, full
+`anchors`, and a parsed `MatchResultDraft` containing `eventDigest` and `matchResultId`.
+
+`replayMatch(input, authoritativeBundle)` parses the supplied authority, requires the exact input,
+re-executes the match, and rejects any non-identical final protocol. The focused B7 suite passes 4/4:
+OFFICIAL, FRIENDLY and SCRIMMAGE all compare Events, Facts, Transcript, Anchors, MatchResult and
+hashes across step/run/replay; a tampered protocol identity is rejected. The full `pnpm check`
+after this remediation passes 23 files / 246 tests, Prettier, ESLint, TypeScript, boundaries, and
+both production builds.
