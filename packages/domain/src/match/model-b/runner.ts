@@ -50,9 +50,11 @@ import {
 import {
   calculateChemistryExecutionModifierMilli,
   calculateEffectiveExecutionStages,
+  calculateFatiguePenaltyMilli,
   calculateOpportunityQualityMilli,
   calculateTacticalExecutionModifierMilli,
   calculateTeamCoordinationIndexMilli,
+  modelBAbilityValues,
   type MatchPlayerSnapshot,
   type TacticalExecutionContext,
   type TraitContext,
@@ -124,6 +126,26 @@ type RunnerPassBehavior = Extract<
   ModelBBehaviorId,
   'PASS' | 'HPASS' | 'CREATIVE_PASS' | 'ASTOPP' | 'HELDKICK'
 >;
+
+/**
+ * A deterministic decision source for runner-level golden vectors.  The
+ * vector does not build events, facts, anchors, or a parallel phase machine:
+ * it supplies only decisions that the live SegmentRuntime would otherwise
+ * obtain from keyed selectors.  `runModelBRunnerVector` still executes the
+ * normal live loop and commits its resulting authoritative objects.
+ */
+export type ModelBRunnerVector = Readonly<{
+  offense: readonly Readonly<{
+    behaviorId: ModelBBehaviorId;
+    actionDurationRawUint64: bigint;
+    /** null proves this step is expected to execute after the LATE guard. */
+    ordinaryGapRawUint64: bigint | null;
+    /** Required only for a pass behavior; otherwise null. */
+    receiverPlayerId: string | null;
+    /** The vector may suppress only a pass/creation turnover for timing vectors. */
+    turnoverMode: 'FORCE_NONE' | 'KEYED';
+  }>[];
+}>;
 
 const UINT64_DOMAIN = 1n << 64n;
 const PASS_BEHAVIORS = new Set<ModelBBehaviorId>([
@@ -245,7 +267,14 @@ function mapInclusive(raw: bigint, minimum: number, maximum: number): number {
  */
 export function deriveModelBSubUint64(
   root: bigint,
-  role: 'ACTION_DURATION' | 'ORDINARY_GAP' | 'FORMATION' | 'TRANSITION_WINDOW' | 'FALLBACK',
+  role:
+    | 'ACTION_DURATION'
+    | 'ORDINARY_GAP'
+    | 'FORMATION'
+    | 'TRANSITION_WINDOW'
+    | 'OFF_SUPPORT'
+    | 'DEF_RETREAT'
+    | 'FALLBACK',
   subject: string,
 ): bigint {
   const digest = idHash('p02-003-r2-subvalue-v1', root.toString(10), role, subject);
@@ -312,14 +341,14 @@ function handlerFromCurrentPossession(
   offense: readonly MatchPlayerSnapshot[],
 ): MatchPlayerSnapshot {
   const anchor = current(session);
-  const previousRebound = session.events.at(-1);
-  if (
-    previousRebound?.period === anchor.period &&
-    previousRebound.possessionIndex === anchor.possession.possessionIndex &&
-    previousRebound.payload.type === 'REBOUND' &&
-    previousRebound.payload.kind === 'OFFENSIVE'
-  ) {
-    return player(session, anchor.possession.side, previousRebound.payload.playerId);
+  const previousControlEvent = [...session.events]
+    .reverse()
+    .find(({ payload }) => payload.type !== 'POSSESSION_ENDED');
+  if (previousControlEvent?.payload.type === 'REBOUND') {
+    return player(session, anchor.possession.side, previousControlEvent.payload.playerId);
+  }
+  if (previousControlEvent?.payload.type === 'STEAL') {
+    return player(session, anchor.possession.side, previousControlEvent.payload.playerId);
   }
   for (const fact of [...session.facts].reverse()) {
     const payload = fact.payload as Record<string, unknown>;
@@ -407,6 +436,88 @@ function effectiveExecution(
             tacticalContext,
           ),
   }).finalExecutionMilli;
+}
+
+function transitionIndividualExecution(
+  session: ModelBSession,
+  playerSnapshot: MatchPlayerSnapshot,
+  blend: Extract<
+    ModelBExecutionBlend,
+    'TRANSITION_CONTROLLER' | 'TRANSITION_SUPPORT' | 'TRANSITION_RETREAT'
+  >,
+): number {
+  return calculateEffectiveExecutionStages({
+    player: currentSnapshot(session, playerSnapshot),
+    blend,
+    fatigueSensitivity: 'FULL',
+    assignedPosition: null,
+    applyPositionMismatch: false,
+    traitContext: 'NONE',
+    chemistryModifierMilli: 0,
+    applyChemistry: false,
+    tacticalModifierMilli: 0,
+  }).finalExecutionMilli;
+}
+
+function weightedTransitionExecution(
+  session: ModelBSession,
+  side: MatchSide,
+  participants: readonly MatchPlayerSnapshot[],
+  weights: readonly number[],
+  blends: readonly Extract<
+    ModelBExecutionBlend,
+    'TRANSITION_CONTROLLER' | 'TRANSITION_SUPPORT' | 'TRANSITION_RETREAT'
+  >[],
+): number {
+  if (
+    participants.length === 0 ||
+    participants.length !== weights.length ||
+    participants.length !== blends.length
+  ) {
+    throw new Error('Transition execution requires one positive weight and blend per participant.');
+  }
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  if (totalWeight < 1) throw new Error('Transition execution weights must be positive.');
+  const weighted = participants.reduce(
+    (sum, participant, index) =>
+      sum + transitionIndividualExecution(session, participant, blends[index]!) * weights[index]!,
+    0,
+  );
+  return clampFixedPoint(
+    roundHalfUp(weighted, totalWeight) +
+      calculateChemistryExecutionModifierMilli(
+        current(session).chemistryWeightedMilli[sideKey(side)],
+      ),
+    0,
+    100_000,
+  );
+}
+
+function transitionCandidateScore(
+  session: ModelBSession,
+  participant: MatchPlayerSnapshot,
+  noise: bigint,
+  role: 'SUPPORT' | 'DRB_RETREAT' | 'LIVE_BALL_RETREAT',
+): number {
+  const values = modelBAbilityValues(participant);
+  const fatiguePenalty = calculateFatiguePenaltyMilli(
+    current(session).fatigueMilliByPlayer[participant.playerId] ?? participant.fatigueMilli,
+    'FULL',
+  );
+  const athleticismMilli = clampFixedPoint(values.athleticism * 1_000 - fatiguePenalty, 0, 100_000);
+  const tacticalUnderstandingMilli = clampFixedPoint(
+    values.tacticalUnderstanding * 1_000 - fatiguePenalty,
+    0,
+    100_000,
+  );
+  const tendencyMilli =
+    role === 'SUPPORT'
+      ? participant.tendencies.transitionParticipation * 1_000
+      : role === 'DRB_RETREAT'
+        ? 100_000 - participant.tendencies.offensiveRebounding * 1_000
+        : tacticalUnderstandingMilli;
+  const noiseMilli = Number((noise * 100_001n) / UINT64_DOMAIN);
+  return roundHalfUp(athleticismMilli * 500 + tendencyMilli * 300 + noiseMilli * 200, 1_000);
 }
 
 function zoneBlends(zone: ShotZone): readonly [ModelBExecutionBlend, ModelBExecutionBlend] {
@@ -530,9 +641,12 @@ function transitionOrigin(session: ModelBSession): TransitionOrigin | null {
   const anchor = current(session);
   if (pendingPossessionStartCount(session) === 0 || anchor.possession.segmentIndex !== 0)
     return null;
+  // A credited STEAL is attribution for the turnover, not a new control origin.
+  // Walk the current atomic tail so TURNOVER remains authoritative when the
+  // canonical TURNOVER -> STEAL -> POSSESSION_ENDED ordering is present.
   const event = [...session.events]
     .reverse()
-    .find(({ payload }) => payload.type !== 'POSSESSION_ENDED');
+    .find(({ payload }) => payload.type === 'REBOUND' || payload.type === 'TURNOVER');
   if (event?.payload.type === 'REBOUND' && event.payload.kind === 'DEFENSIVE') {
     return { kind: 'DRB', sourceEventId: event.eventId, sourceModifierMilli: 0 };
   }
@@ -603,6 +717,7 @@ class SegmentRuntime {
   readonly segmentRoot: bigint;
   readonly normalTargetSeconds: number;
   readonly terminalReserveSeconds = 1;
+  readonly runnerVector: ModelBRunnerVector | null;
   readonly payloads: MatchEvent['payload'][] = [];
   readonly facts: ModelBFactDraft[] = [];
   readonly opportunityDeltas: number[] = [];
@@ -631,11 +746,15 @@ class SegmentRuntime {
   transitionRoot: bigint | null = null;
   transitionOffenseExecutionMilli: number | null = null;
   transitionDefenseExecutionMilli: number | null = null;
+  transitionSupporterIds: readonly string[] = [];
+  transitionRetreaterIds: readonly string[] = [];
+  transitionContextFactIndex: number | null = null;
   completedTransitionOffenseActions = 0;
   lastActionTraceFactIndex: number | null = null;
 
-  constructor(session: ModelBSession) {
+  constructor(session: ModelBSession, runnerVector: ModelBRunnerVector | null = null) {
     this.session = session;
+    this.runnerVector = runnerVector;
     const anchor = current(session);
     this.offenseSide = anchor.possession.side;
     this.defenseSide = oppositeSide(this.offenseSide);
@@ -696,6 +815,18 @@ class SegmentRuntime {
       possessionIndex: anchor.possession.possessionIndex,
       segmentIndex: anchor.possession.segmentIndex,
     };
+  }
+
+  transitionOffenseParticipants(): readonly MatchPlayerSnapshot[] {
+    if (this.phase !== 'TRANSITION') return this.offense;
+    const participantIds = new Set([this.handler.playerId, ...this.transitionSupporterIds]);
+    return this.offense.filter(({ playerId }) => participantIds.has(playerId));
+  }
+
+  transitionDefenseParticipants(): readonly MatchPlayerSnapshot[] {
+    if (this.phase !== 'TRANSITION') return this.defense;
+    const participantIds = new Set(this.transitionRetreaterIds);
+    return this.defense.filter(({ playerId }) => participantIds.has(playerId));
   }
 
   appendDecisionClock(seconds: number): number {
@@ -788,13 +919,44 @@ class SegmentRuntime {
     });
   }
 
-  markTransitionFallback(): void {
+  markTransitionFallback(
+    reason: 'WINDOW_EXPIRED' | 'REORG_COMPLETED' | 'RNG_DEFENSE_RECOVERY',
+  ): void {
     if (this.lastActionTraceFactIndex === null) return;
     const trace = this.facts[this.lastActionTraceFactIndex];
     if (trace === undefined) return;
     this.facts[this.lastActionTraceFactIndex] = {
       ...trace,
-      payload: { ...(trace.payload as Record<string, unknown>), transitionFallback: true },
+      payload: {
+        ...(trace.payload as Record<string, unknown>),
+        transitionFallback: true,
+        transitionFallbackReason: reason,
+      },
+    };
+    if (this.transitionContextFactIndex === null) return;
+    const context = this.facts[this.transitionContextFactIndex];
+    if (context === undefined) return;
+    const traceOrdinal = (trace.payload as Record<string, unknown>).behaviorSelectionOrdinal;
+    this.facts[this.transitionContextFactIndex] = {
+      ...context,
+      payload: {
+        ...(context.payload as Record<string, unknown>),
+        fallback: {
+          occurred: true,
+          atDecisionSecond: this.decisionElapsedSeconds,
+          reason:
+            reason === 'REORG_COMPLETED'
+              ? 'REORG'
+              : reason === 'WINDOW_EXPIRED'
+                ? 'WINDOW_EXPIRED'
+                : 'RNG_DEFENSE_RECOVERY',
+          sourceBehaviorOrdinal:
+            typeof traceOrdinal === 'number' && Number.isSafeInteger(traceOrdinal)
+              ? traceOrdinal
+              : null,
+        },
+        finalPhase: 'HALF_COURT',
+      },
     };
   }
 
@@ -816,6 +978,8 @@ class SegmentRuntime {
   }
 
   actionRaw(behaviorId: ModelBBehaviorId): bigint {
+    const controlled = this.currentVectorStep(behaviorId);
+    if (controlled !== null) return controlled.actionDurationRawUint64;
     return deriveModelBSubUint64(
       this.segmentRoot,
       'ACTION_DURATION',
@@ -824,6 +988,13 @@ class SegmentRuntime {
   }
 
   ordinaryGapRaw(behaviorId: ModelBBehaviorId): bigint {
+    const controlled = this.currentVectorStep(behaviorId);
+    if (controlled !== null) {
+      if (controlled.ordinaryGapRawUint64 === null) {
+        throw new Error('A runner vector must not read an ordinary-gap raw after the LATE guard.');
+      }
+      return controlled.ordinaryGapRawUint64;
+    }
     return deriveModelBSubUint64(
       this.segmentRoot,
       'ORDINARY_GAP',
@@ -874,6 +1045,40 @@ class SegmentRuntime {
       ),
       possessionDeltasMilli: this.opportunityDeltas,
     });
+  }
+
+  currentVectorStep(behaviorId?: ModelBBehaviorId): ModelBRunnerVector['offense'][number] | null {
+    if (this.runnerVector === null) return null;
+    const step = this.runnerVector.offense[this.behaviorSelectionOrdinal];
+    if (step === undefined) {
+      throw new Error(
+        'Model B runner vector exhausted before the live segment reached a boundary.',
+      );
+    }
+    if (behaviorId !== undefined && step.behaviorId !== behaviorId) {
+      throw new Error(
+        `Model B runner vector expected ${step.behaviorId}, received ${behaviorId} at ordinal ${this.behaviorSelectionOrdinal}.`,
+      );
+    }
+    return step;
+  }
+
+  controlledReceiver(behaviorId: RunnerPassBehavior): MatchPlayerSnapshot | null {
+    const step = this.currentVectorStep(behaviorId);
+    if (step === null) return null;
+    if (step.receiverPlayerId === null) {
+      throw new Error(`Model B runner vector requires a receiver for ${behaviorId}.`);
+    }
+    if (step.receiverPlayerId === this.handler.playerId) {
+      throw new Error('Model B runner vector cannot create a self-pass.');
+    }
+    const receiver = this.transitionOffenseParticipants().find(
+      ({ playerId }) => playerId === step.receiverPlayerId,
+    );
+    if (receiver === undefined) {
+      throw new Error(`Model B runner vector receiver ${step.receiverPlayerId} is not legal.`);
+    }
+    return receiver;
   }
 }
 
@@ -1107,19 +1312,73 @@ function actionFits(
   behaviorId: ModelBBehaviorId,
   terminal: boolean,
 ): boolean {
+  const controlled = runtime.currentVectorStep();
+  if (controlled !== null && controlled.behaviorId !== behaviorId) return false;
   return runtime.durationFor(behaviorId, terminal) !== null;
 }
 
 function directDefender(runtime: SegmentRuntime, target: MatchPlayerSnapshot): MatchPlayerSnapshot {
   const anchor = current(runtime.session);
+  const eligibleDefenders = runtime.transitionDefenseParticipants();
   const defenderId = resolveModelBDirectOpponent({
     actorPlayerId: target.playerId,
     actorLineup: anchor.lineups[sideKey(runtime.offenseSide)],
     opponentLineup: anchor.lineups[sideKey(runtime.defenseSide)],
-    eligibleOpponentIds: runtime.defense.map(({ playerId }) => playerId),
+    eligibleOpponentIds: eligibleDefenders.map(({ playerId }) => playerId),
   });
   if (defenderId === null) throw new Error('A legal Model B action requires an on-ball defender.');
   return player(runtime.session, runtime.defenseSide, defenderId);
+}
+
+function transitionParticipants(
+  runtime: SegmentRuntime,
+  origin: NonNullable<TransitionOrigin>,
+  transitionRoot: bigint,
+): Readonly<{
+  supporters: readonly MatchPlayerSnapshot[];
+  retreaters: readonly MatchPlayerSnapshot[];
+}> {
+  const supporters = runtime.offense
+    .filter(({ playerId }) => playerId !== runtime.handler.playerId)
+    .map((participant) => ({
+      participant,
+      score: transitionCandidateScore(
+        runtime.session,
+        participant,
+        deriveModelBSubUint64(transitionRoot, 'OFF_SUPPORT', participant.playerId),
+        'SUPPORT',
+      ),
+    }))
+    .sort((left, right) =>
+      right.score === left.score
+        ? compareUtf16CodeUnits(left.participant.playerId, right.participant.playerId)
+        : right.score - left.score,
+    )
+    .slice(0, Math.min(2, runtime.offense.length - 1))
+    .map(({ participant }) => participant);
+  const retreatRole: 'DRB_RETREAT' | 'LIVE_BALL_RETREAT' =
+    origin.kind === 'DRB' ? 'DRB_RETREAT' : 'LIVE_BALL_RETREAT';
+  const retreaters = runtime.defense
+    .map((participant) => ({
+      participant,
+      score: transitionCandidateScore(
+        runtime.session,
+        participant,
+        deriveModelBSubUint64(transitionRoot, 'DEF_RETREAT', participant.playerId),
+        retreatRole,
+      ),
+    }))
+    .sort((left, right) =>
+      right.score === left.score
+        ? compareUtf16CodeUnits(left.participant.playerId, right.participant.playerId)
+        : right.score - left.score,
+    )
+    .slice(0, Math.min(3, runtime.defense.length))
+    .map(({ participant }) => participant);
+  return Object.freeze({
+    supporters: Object.freeze(supporters),
+    retreaters: Object.freeze(retreaters),
+  });
 }
 
 function transitionEntry(runtime: SegmentRuntime): void {
@@ -1129,21 +1388,32 @@ function transitionEntry(runtime: SegmentRuntime): void {
   const available = Math.min(runtime.periodRemaining, runtime.shotRemaining);
   if (available < transitionD.minimumSeconds + runtime.terminalReserveSeconds) return;
   const controller = runtime.handler;
-  const direct = directDefender(runtime, controller);
-  const offenseExecution = effectiveExecution(
+  const transitionRoot = keyedDrawUint64({
+    ...drawContext(runtime.session),
+    drawKind: 'TRANSITION',
+    localIndex: 0,
+  });
+  const participants = transitionParticipants(runtime, origin, transitionRoot);
+  runtime.transitionSupporterIds = participants.supporters.map(({ playerId }) => playerId);
+  runtime.transitionRetreaterIds = participants.retreaters.map(({ playerId }) => playerId);
+  const direct = participants.retreaters[0];
+  if (direct === undefined) throw new Error('Transition entry requires a legal primary retreater.');
+  const offenseExecution = weightedTransitionExecution(
     runtime.session,
     runtime.offenseSide,
-    controller,
-    'BALL_PROTECTION',
-    'BALL_SECURITY',
+    [controller, ...participants.supporters],
+    [700, ...participants.supporters.map(() => 150)],
+    [
+      'TRANSITION_CONTROLLER',
+      ...participants.supporters.map<'TRANSITION_SUPPORT'>(() => 'TRANSITION_SUPPORT'),
+    ],
   );
-  const defenseExecution = effectiveExecution(
+  const defenseExecution = weightedTransitionExecution(
     runtime.session,
     runtime.defenseSide,
-    direct,
-    'DEFENSIVE_PRESSURE',
-    'ON_BALL_PERIMETER_DEFENSE',
-    'DEFENSIVE_PRESSURE',
+    participants.retreaters,
+    [600, ...participants.retreaters.slice(1).map(() => 200)],
+    participants.retreaters.map<'TRANSITION_RETREAT'>(() => 'TRANSITION_RETREAT'),
   );
   const probabilityMilli = calculateModelBTransitionFormationProbabilityMilli({
     offenseExecutionMilli: offenseExecution,
@@ -1163,15 +1433,15 @@ function transitionEntry(runtime: SegmentRuntime): void {
   if (duration === null) return;
   const start = runtime.decisionElapsedSeconds;
   const clockIndex = runtime.appendDecisionClock(duration);
-  const transitionRoot = keyedDrawUint64({
-    ...drawContext(runtime.session),
-    drawKind: 'TRANSITION',
-    localIndex: 0,
-  });
   const formed = probabilityOccurs(
     deriveModelBSubUint64(transitionRoot, 'FORMATION', '0'),
     probabilityMilli,
   );
+  runtime.transitionWindowSeconds = Math.min(
+    mapInclusive(deriveModelBSubUint64(transitionRoot, 'TRANSITION_WINDOW', ''), 3, 8),
+    runtime.normalTargetSeconds,
+  );
+  runtime.transitionContextFactIndex = runtime.facts.length;
   runtime.facts.push({
     factKind: 'EXPLANATION',
     sourceEventIndexes: [clockIndex],
@@ -1181,11 +1451,15 @@ function transitionEntry(runtime: SegmentRuntime): void {
       origin: origin.kind,
       originEventId: origin.sourceEventId,
       controllerId: controller.playerId,
-      directRetreaterId: direct.playerId,
+      supporterIds: runtime.transitionSupporterIds,
+      retreaterIds: runtime.transitionRetreaterIds,
       offenseExecutionMilli: offenseExecution,
       defenseExecutionMilli: defenseExecution,
       formationProbabilityMilli: probabilityMilli,
       formed,
+      transitionWindowSeconds: runtime.transitionWindowSeconds,
+      fallback: null,
+      finalPhase: formed ? 'TRANSITION' : 'HALF_COURT',
       ...runtime['coordinate'](),
     },
   });
@@ -1193,7 +1467,7 @@ function transitionEntry(runtime: SegmentRuntime): void {
     behaviorId: 'TRANSITIOND',
     clockIndex,
     handlerBeforeId: runtime.handler.playerId,
-    actorIds: [direct.playerId],
+    actorIds: runtime.transitionRetreaterIds,
     targetIds: [controller.playerId],
     durationSeconds: duration,
     startOffsetSeconds: start,
@@ -1204,23 +1478,34 @@ function transitionEntry(runtime: SegmentRuntime): void {
   if (!formed) return;
   runtime.phase = 'TRANSITION';
   runtime.transitionRoot = transitionRoot;
-  runtime.transitionWindowSeconds = Math.min(
-    mapInclusive(deriveModelBSubUint64(transitionRoot, 'TRANSITION_WINDOW', ''), 3, 8),
-    runtime.normalTargetSeconds,
-  );
   runtime.transitionOffenseExecutionMilli = offenseExecution;
   runtime.transitionDefenseExecutionMilli = defenseExecution;
   runtime.forceOffense = true;
 }
 
-function applyTransitionFallback(runtime: SegmentRuntime): boolean {
+function applyTransitionFallback(
+  runtime: SegmentRuntime,
+  trigger: 'WINDOW_EXPIRED' | 'REORG_COMPLETED' | 'OFFENSE_COMPLETED',
+): boolean {
   if (runtime.phase !== 'TRANSITION' || runtime.transitionRoot === null) return false;
-  runtime.completedTransitionOffenseActions += 1;
-  if (runtime.decisionElapsedSeconds >= runtime.transitionWindowSeconds!) {
-    runtime.phase = 'HALF_COURT_NORMAL';
+  const leaveTransition = (
+    reason: 'WINDOW_EXPIRED' | 'REORG_COMPLETED' | 'RNG_DEFENSE_RECOVERY',
+  ): boolean => {
+    runtime.phase =
+      runtime.decisionElapsedSeconds >= runtime.normalTargetSeconds
+        ? 'LATE_CLOCK'
+        : 'HALF_COURT_NORMAL';
     runtime.forceOffense = false;
-    runtime.markTransitionFallback();
+    runtime.markTransitionFallback(reason);
     return true;
+  };
+  runtime.completedTransitionOffenseActions += 1;
+  if (
+    trigger === 'WINDOW_EXPIRED' ||
+    trigger === 'REORG_COMPLETED' ||
+    runtime.decisionElapsedSeconds >= runtime.transitionWindowSeconds!
+  ) {
+    return leaveTransition(trigger === 'REORG_COMPLETED' ? 'REORG_COMPLETED' : 'WINDOW_EXPIRED');
   }
   const probabilityMilli = calculateModelBTransitionFallbackProbabilityMilli({
     offenseExecutionMilli: runtime.transitionOffenseExecutionMilli!,
@@ -1235,10 +1520,7 @@ function applyTransitionFallback(runtime: SegmentRuntime): boolean {
     String(runtime.completedTransitionOffenseActions),
   );
   if (probabilityOccurs(raw, probabilityMilli)) {
-    runtime.phase = 'HALF_COURT_NORMAL';
-    runtime.forceOffense = false;
-    runtime.markTransitionFallback();
-    return true;
+    return leaveTransition('RNG_DEFENSE_RECOVERY');
   }
   return false;
 }
@@ -1486,6 +1768,7 @@ function resolveTurnover(
   defender: MatchPlayerSnapshot,
   creative = false,
 ): readonly number[] | null {
+  if (runtime.currentVectorStep()?.turnoverMode === 'FORCE_NONE') return null;
   const resolution = buildModelBTurnoverResolution(runtime.session, {
     transitionEventOffset: runtime.prefix + runtime.payloads.length,
     handlerPlayerId: handler.playerId,
@@ -1525,13 +1808,16 @@ function resolvePass(
 ): ModelBSegmentResolution | null {
   const handlerBefore = runtime.handler;
   const defender = directDefender(runtime, handlerBefore);
-  const receiver = selectModelBReceiverOrBeneficiary({
-    context: drawContext(runtime.session),
-    behaviorId,
-    behaviorSelectionOrdinal: runtime.behaviorSelectionOrdinal,
-    candidates: runtime.offense,
-    excludedPlayerIds: [handlerBefore.playerId],
-  });
+  const receiver =
+    runtime.controlledReceiver(behaviorId) ??
+    selectModelBReceiverOrBeneficiary({
+      context: drawContext(runtime.session),
+      behaviorId,
+      behaviorSelectionOrdinal: runtime.behaviorSelectionOrdinal,
+      candidates: runtime.transitionOffenseParticipants(),
+      excludedPlayerIds: [handlerBefore.playerId],
+    })?.value ??
+    null;
   if (receiver === null) throw new Error(`${behaviorId} requires one legal receiver.`);
   runtime.appendOrdinaryGap(behaviorId, duration, false);
   const start = runtime.decisionElapsedSeconds;
@@ -1548,7 +1834,7 @@ function resolvePass(
       clockIndex,
       handlerBeforeId: handlerBefore.playerId,
       actorIds: [handlerBefore.playerId],
-      targetIds: [receiver.value.playerId],
+      targetIds: [receiver.playerId],
       durationSeconds: duration,
       startOffsetSeconds: start,
       resultCode: 'PASS_TURNOVER',
@@ -1561,7 +1847,7 @@ function resolvePass(
     buildModelBPassFactDraft({
       sourceEventIndexes: [clockIndex],
       passerId: handlerBefore.playerId,
-      receiverId: receiver.value.playerId,
+      receiverId: receiver.playerId,
       behaviorId,
       possessionIndex: current(runtime.session).possession.possessionIndex,
       segmentIndex: current(runtime.session).possession.segmentIndex,
@@ -1569,8 +1855,8 @@ function resolvePass(
     }),
   );
   runtime.passSequence += 1;
-  runtime.changeHandler(receiver.value, clockIndex);
-  runtime.pendingAssist = { passerId: handlerBefore.playerId, receiverId: receiver.value.playerId };
+  runtime.changeHandler(receiver, clockIndex);
+  runtime.pendingAssist = { passerId: handlerBefore.playerId, receiverId: receiver.playerId };
   if (behaviorId === 'CREATIVE_PASS' || behaviorId === 'HELDKICK') {
     const delta = Math.min(
       MODEL_B_PARAMETER_REGISTRY.creativePassOpportunityBonusMilli,
@@ -1581,7 +1867,7 @@ function resolvePass(
       buildModelBCreationFactDraft({
         sourceEventIndexes: [clockIndex],
         creatorId: handlerBefore.playerId,
-        beneficiaryId: receiver.value.playerId,
+        beneficiaryId: receiver.playerId,
         behaviorId,
         opportunityQualityDelta: delta,
         defensiveResponse: 'NONE',
@@ -1596,7 +1882,7 @@ function resolvePass(
     clockIndex,
     handlerBeforeId: handlerBefore.playerId,
     actorIds: [handlerBefore.playerId],
-    targetIds: [receiver.value.playerId],
+    targetIds: [receiver.playerId],
     durationSeconds: duration,
     startOffsetSeconds: start,
     resultCode: 'PASS_COMPLETED',
@@ -1761,7 +2047,7 @@ function resolveOffBall(
       context: drawContext(runtime.session),
       behaviorId,
       behaviorSelectionOrdinal: runtime.behaviorSelectionOrdinal,
-      candidates: runtime.offense,
+      candidates: runtime.transitionOffenseParticipants(),
       excludedPlayerIds: behaviorId === 'SCREEN' ? [handlerBefore.playerId] : [],
     })?.value ?? handlerBefore;
   runtime.appendOrdinaryGap(behaviorId, duration, false);
@@ -1797,7 +2083,7 @@ function resolveOffBall(
           context: drawContext(runtime.session),
           behaviorId,
           behaviorSelectionOrdinal: runtime.behaviorSelectionOrdinal,
-          candidates: runtime.offense,
+          candidates: runtime.transitionOffenseParticipants(),
           excludedPlayerIds: behaviorId === 'CUT' ? [] : [handlerBefore.playerId],
         })?.value ?? actor);
   const delta = success
@@ -1859,8 +2145,10 @@ function resolveShot(
   const handlerBefore = runtime.handler;
   const shooterCandidates =
     runtime.pendingShooterId === null
-      ? runtime.offense
-      : runtime.offense.filter(({ playerId }) => playerId === runtime.pendingShooterId);
+      ? runtime.transitionOffenseParticipants()
+      : runtime
+          .transitionOffenseParticipants()
+          .filter(({ playerId }) => playerId === runtime.pendingShooterId);
   const shooter = selectedShooter(runtime.session, shooterCandidates, runtime.shotInstanceIndex);
   const defender = directDefender(runtime, shooter);
   const zone = SHOT_ZONE_BY_BEHAVIOR[behaviorId];
@@ -2228,6 +2516,15 @@ function chooseOffensiveBehavior(runtime: SegmentRuntime): ModelBBehaviorId {
   if (legal.length === 0) {
     throw new Error('The phase guard must leave at least one legal Model B offensive action.');
   }
+  const controlled = runtime.currentVectorStep();
+  if (controlled !== null) {
+    if (!legal.includes(controlled.behaviorId)) {
+      throw new Error(
+        `Model B runner vector selected illegal ${controlled.behaviorId} at ordinal ${runtime.behaviorSelectionOrdinal}.`,
+      );
+    }
+    return controlled.behaviorId;
+  }
   return selectModelBBehavior({
     context: drawContext(runtime.session),
     behaviorSelectionOrdinal: runtime.behaviorSelectionOrdinal,
@@ -2238,6 +2535,7 @@ function chooseOffensiveBehavior(runtime: SegmentRuntime): ModelBBehaviorId {
 }
 
 function chooseDefensiveBehavior(runtime: SegmentRuntime): ModelBBehaviorId | null {
+  if (runtime.runnerVector !== null) return null;
   const defender = directDefender(runtime, runtime.handler);
   const legal = DEFENSIVE_BEHAVIORS.filter((behaviorId) => actionFits(runtime, behaviorId, false));
   if (legal.length === 0) return null;
@@ -2265,8 +2563,11 @@ function commitRuntime(
 }
 
 /** Advances one complete, atomic live-ball segment to a real basketball boundary. */
-function runLiveSegment(session: ModelBSession): ModelBSession {
-  const runtime = new SegmentRuntime(session);
+function runLiveSegment(
+  session: ModelBSession,
+  runnerVector: ModelBRunnerVector | null = null,
+): ModelBSession {
+  const runtime = new SegmentRuntime(session, runnerVector);
   if (runtime.periodRemaining < 1) return completeModelBPeriod(session);
   if (runtime.shotRemaining < 1) {
     throw new Error('A segment reaches shot-clock zero only through its committed decision clock.');
@@ -2343,9 +2644,32 @@ function runLiveSegment(session: ModelBSession): ModelBSession {
       throw new Error(`Model B runner has no causal execution for ${offensive}.`);
     }
     if (resolution !== null) return commitRuntime(runtime, resolution);
-    applyTransitionFallback(runtime);
+    applyTransitionFallback(
+      runtime,
+      offensive === 'REORG' ? 'REORG_COMPLETED' : 'OFFENSE_COMPLETED',
+    );
   }
   throw new Error('Model B active segment exceeded its deterministic action guard.');
+}
+
+/**
+ * Executes one formal live segment from a deterministic vector.  This exists
+ * for runner-object golden tests: selection/raw/outcome inputs are controlled,
+ * while event, fact, anchor, transcript, and invariant production remain the
+ * same `SegmentRuntime → runLiveSegment → commitModelBActiveSegment` path.
+ */
+export function runModelBRunnerVector(
+  session: ModelBSession,
+  runnerVector: ModelBRunnerVector,
+): ModelBSession {
+  if (runnerVector.offense.length === 0) {
+    throw new Error('Model B runner vector requires at least one offensive decision.');
+  }
+  const anchor = current(session);
+  if (anchor.status !== 'IN_PROGRESS' || anchor.periodClockSeconds < 1) {
+    throw new Error('Model B runner vector requires an active live segment.');
+  }
+  return runLiveSegment(session, runnerVector);
 }
 
 /** Advances exactly one committed live segment or one automated/period control boundary. */

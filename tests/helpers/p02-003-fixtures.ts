@@ -58,9 +58,19 @@ function makePlayer(playerId: string, index: number, rating = 50): MatchPlayer {
   };
 }
 
-function makeTeam(teamId: string, playerPrefix: string, rosterSize: 12, rating = 50) {
+function makeTeam(
+  teamId: string,
+  playerPrefix: string,
+  rosterSize: 12,
+  rating = 50,
+  playerIds?: readonly string[],
+) {
   const players = Array.from({ length: rosterSize }, (_, index) =>
-    makePlayer(`${playerPrefix}-${String(index + 1).padStart(2, '0')}`, index, rating),
+    makePlayer(
+      playerIds?.[index] ?? `${playerPrefix}-${String(index + 1).padStart(2, '0')}`,
+      index,
+      rating,
+    ),
   );
   return {
     teamId,
@@ -94,6 +104,7 @@ export function makeP02MatchInput(
     matchSeed?: readonly [number, number, number, number];
     homeRating?: number;
     awayRating?: number;
+    homePlayerIds?: readonly string[];
   }> = {},
 ): ModelBMatchInput {
   const matchKind = options.matchKind ?? 'OFFICIAL';
@@ -176,7 +187,13 @@ export function makeP02MatchInput(
         })()
       : {
           ...identity,
-          homeTeam: makeTeam('HOME-TEAM', 'HOME', 12, options.homeRating ?? 50),
+          homeTeam: makeTeam(
+            'HOME-TEAM',
+            'HOME',
+            12,
+            options.homeRating ?? 50,
+            options.homePlayerIds,
+          ),
           awayTeam: makeTeam('AWAY-TEAM', 'AWAY', 12, options.awayRating ?? 50),
         };
   const matchId = deriveMatchId(base as MatchInput);

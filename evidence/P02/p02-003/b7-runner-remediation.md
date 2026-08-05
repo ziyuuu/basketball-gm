@@ -18,9 +18,12 @@ is not an independent audit, a Gate B decision, or an authorization to start B8.
    receiver handler changes, new shooter/new defender selection, opportunity quality, foul, block,
    free throw and rebound tails are connected. A field-goal flight consumes period/fatigue only;
    buzzer release and shooting-foul ordering follow v6 D.10.
-4. Transition entry derives from real defensive rebound/pressured-turnover origins. TRANSITIOND is
-   forced only when time-legal, consumes `TRANSITION/0` only then, applies the accepted formation
-   formula, and uses the frozen strict-less-than fallback calculation without a new top-level draw.
+4. Transition entry derives from real defensive rebound/pressured-turnover origins, including a
+   credited `STEAL`'s referenced pressured-turnover Event. It derives the controller, two
+   `OFF_SUPPORT/<playerId>` supporters and three `DEF_RETREAT/<playerId>` retreaters before
+   `TRANSITIOND`, records those identities in both context and trace, and uses them in formation
+   and fallback execution. `REORG_COMPLETED` and window expiry leave TRANSITION deterministically;
+   only a nonterminal window action may read the frozen strict-less-than fallback subvalue.
 5. Fact materialization resolves Action Trace result event indices, then sorts all Fact drafts by
    source local sequence, subtype rank and intra-type ordinal before deriving dense Fact identity.
    Replay reconstructs and validates the accepted authority bundle without re-running selectors or
@@ -31,8 +34,12 @@ is not an independent audit, a Gate B decision, or an authorization to start B8.
 - `behavior-causality-matrix.md` records every selectable behavior's entry, participants, draw
   scope, causal continuation, Event/Fact and Anchor effect. Its test requires actual ACTION_TRACE
   execution rather than candidate-list membership.
-- V25 tests `0→11→13→14→30→0`, H1→H2→H3→H2, no LATE ordinary gap/no SHOT draw, handler/PASS/
-  ACTION_TRACE/violation Fact drafts and the final H2 violation owner.
+- V25's object-level vector uses `createModelBSession → runModelBRunnerVector → runLiveSegment →
+commitModelBActiveSegment`, generating the real Event/Fact/Anchor chain for
+  `0→11→13→14→30→0`, H1→H2→H3→H2 and the final H2 violation. It supplies only controlled
+  selection/raw/outcome inputs; it cannot fabricate authoritative objects. The older pure phase
+  projection remains supplementary arithmetic coverage. A deliberately unexecuted SPOTUP and null
+  LATE ordinary-gap inputs prove the guard stops before either can be consumed.
 - OFFICIAL, FRIENDLY and SCRIMMAGE compare Events, Facts, Anchors, Transcript and formal protocol
   result/identity across `stepToNextControlBoundary`, `runToEnd` and accepted-authority replay.
 - One modified protocol/transcript identity is rejected as a replay consistency negative. It is not

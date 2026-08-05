@@ -5,10 +5,13 @@ import {
   MODEL_B_RUNNER_SELECTABLE_BEHAVIOR_IDS,
   calculateModelBTransitionFallbackProbabilityMilli,
   calculateModelBTransitionFormationProbabilityMilli,
+  commitModelBActiveSegment,
   createModelBSession,
   deriveModelBSubUint64,
   finalizeModelBProtocolBundle,
+  predictModelBEventId,
   replayMatch,
+  runModelBRunnerVector,
   runModelBSegmentPhaseMachine,
   runToEnd,
   stepToNextControlBoundary,
@@ -81,7 +84,7 @@ describe('P02-003 B7 headless runner identity', () => {
     ).toBe(true);
   }, 120_000);
 
-  it('runs V25 through the frozen phase guard without an invalid candidate or draw', () => {
+  it('keeps the pure V25 phase projection as supplementary arithmetic coverage', () => {
     const max = (1n << 64n) - 1n;
     const phase = runModelBSegmentPhaseMachine({
       state: {
@@ -202,6 +205,126 @@ describe('P02-003 B7 headless runner identity', () => {
     expect((phase.factDrafts.at(-1)!.payload as Record<string, unknown>).handlerPlayerId).toBe(
       'H2',
     );
+  });
+
+  it('runs V25 through the formal runner object chain without executing an invalid candidate or LATE gap draw', () => {
+    const max = (1n << 64n) - 1n;
+    const input = makeP02MatchInput({
+      matchSeed: [67, 68, 69, 70],
+      homePlayerIds: Array.from({ length: 12 }, (_, index) => `H${index + 1}`),
+    });
+    const initial = createModelBSession(input);
+    expect(initial.anchors.at(-1)!.possession.side).toBe('HOME');
+
+    const completed = runModelBRunnerVector(initial, {
+      offense: [
+        {
+          behaviorId: 'PASS',
+          actionDurationRawUint64: 1n << 63n,
+          ordinaryGapRawUint64: max,
+          receiverPlayerId: 'H2',
+          turnoverMode: 'FORCE_NONE',
+        },
+        {
+          behaviorId: 'REORG',
+          actionDurationRawUint64: max,
+          ordinaryGapRawUint64: null,
+          receiverPlayerId: null,
+          turnoverMode: 'FORCE_NONE',
+        },
+        {
+          behaviorId: 'PASS',
+          actionDurationRawUint64: max,
+          ordinaryGapRawUint64: null,
+          receiverPlayerId: 'H3',
+          turnoverMode: 'FORCE_NONE',
+        },
+        {
+          behaviorId: 'ADV',
+          actionDurationRawUint64: max,
+          ordinaryGapRawUint64: null,
+          receiverPlayerId: null,
+          turnoverMode: 'FORCE_NONE',
+        },
+        {
+          behaviorId: 'REORG',
+          actionDurationRawUint64: max,
+          ordinaryGapRawUint64: null,
+          receiverPlayerId: null,
+          turnoverMode: 'FORCE_NONE',
+        },
+        {
+          behaviorId: 'PASS',
+          actionDurationRawUint64: max,
+          ordinaryGapRawUint64: null,
+          receiverPlayerId: 'H2',
+          turnoverMode: 'FORCE_NONE',
+        },
+        {
+          behaviorId: 'ADV',
+          actionDurationRawUint64: max,
+          ordinaryGapRawUint64: null,
+          receiverPlayerId: null,
+          turnoverMode: 'FORCE_NONE',
+        },
+        // This action is deliberately valid in isolation, but the runner must
+        // stop at the H2 shot-clock violation before it can select or draw it.
+        {
+          behaviorId: 'SPOTUP',
+          actionDurationRawUint64: max,
+          ordinaryGapRawUint64: null,
+          receiverPlayerId: null,
+          turnoverMode: 'KEYED',
+        },
+      ],
+    });
+
+    expect(completed.events.map(({ payload }) => payload)).toEqual([
+      { type: 'POSSESSION_STARTED', side: 'HOME' },
+      { type: 'CLOCK_ADVANCED', seconds: 11 },
+      { type: 'CLOCK_ADVANCED', seconds: 2 },
+      { type: 'CLOCK_ADVANCED', seconds: 1 },
+      { type: 'CLOCK_ADVANCED', seconds: 2 },
+      { type: 'CLOCK_ADVANCED', seconds: 3 },
+      { type: 'CLOCK_ADVANCED', seconds: 3 },
+      { type: 'CLOCK_ADVANCED', seconds: 2 },
+      { type: 'CLOCK_ADVANCED', seconds: 3 },
+      { type: 'CLOCK_ADVANCED', seconds: 3 },
+      { type: 'TURNOVER', playerId: 'H2', turnoverKind: 'UNFORCED_DEAD_BALL' },
+      { type: 'POSSESSION_ENDED', side: 'HOME' },
+    ]);
+    expect(completed.anchors).toHaveLength(2);
+    expect(completed.anchors.at(-1)).toMatchObject({
+      period: 1,
+      periodClockSeconds: 570,
+      possession: { side: 'AWAY', possessionIndex: 1, segmentIndex: 0 },
+      status: 'IN_PROGRESS',
+    });
+
+    const payloadOf = (fact: (typeof completed.facts)[number]) =>
+      fact.payload as Record<string, unknown>;
+    const traces = completed.facts.filter((fact) => payloadOf(fact).type === 'ACTION_TRACE');
+    expect(traces.map((fact) => payloadOf(fact).behaviorId)).toEqual([
+      'PASS',
+      'REORG',
+      'PASS',
+      'ADV',
+      'REORG',
+      'PASS',
+      'ADV',
+    ]);
+    expect(traces.at(0)!.payload).toMatchObject({ phase: 'HALF_COURT_NORMAL' });
+    expect(traces.slice(1).every((fact) => payloadOf(fact).phase === 'LATE_CLOCK')).toBe(true);
+    expect(traces.some((fact) => payloadOf(fact).behaviorId === 'SPOTUP')).toBe(false);
+    expect(completed.events.some(({ payload }) => payload.type === 'SHOT')).toBe(false);
+
+    const handlers = completed.facts
+      .filter((fact) => payloadOf(fact).type === 'POSSESSION_HANDLER')
+      .map((fact) => payloadOf(fact).handlerPlayerId);
+    expect(handlers).toEqual(['H1', 'H2', 'H3', 'H2']);
+    expect(
+      completed.facts.find((fact) => payloadOf(fact).type === 'SHOT_CLOCK_VIOLATION')?.payload,
+    ).toMatchObject({ handlerPlayerId: 'H2' });
   });
 
   it('freezes transition subvalue isolation and the accepted formation formula', () => {
@@ -365,12 +488,48 @@ describe('P02-003 B7 headless runner identity', () => {
     ).toBe(true);
     expect(transitionContexts.some((fact) => payloadOf(fact).formed === true)).toBe(true);
     expect(transitionContexts.some((fact) => payloadOf(fact).formed === false)).toBe(true);
+    for (const context of transitionContexts) {
+      const payload = payloadOf(context);
+      const supporterIds = payload.supporterIds as readonly string[];
+      const retreaterIds = payload.retreaterIds as readonly string[];
+      expect(Array.isArray(supporterIds)).toBe(true);
+      expect(Array.isArray(retreaterIds)).toBe(true);
+      expect(supporterIds).toHaveLength(2);
+      expect(retreaterIds).toHaveLength(3);
+      expect(new Set(supporterIds).size).toBe(supporterIds.length);
+      expect(new Set(retreaterIds).size).toBe(retreaterIds.length);
+      expect(supporterIds).not.toContain(payload.controllerId);
+      const trace = transitionTraces.find((candidate) =>
+        candidate.sourceEventIds.includes(context.sourceEventIds[0]!),
+      );
+      expect(trace).toBeDefined();
+      expect(payloadOf(trace!).actorIds).toEqual([...retreaterIds].sort());
+      expect(payloadOf(trace!).targetIds).toEqual([payload.controllerId]);
+    }
     expect(
       facts.some(
         (fact) =>
           payloadOf(fact).type === 'ACTION_TRACE' && payloadOf(fact).transitionFallback === true,
       ),
     ).toBe(true);
+
+    const transitionReorganizations = facts.filter((fact) => {
+      const payload = payloadOf(fact);
+      return (
+        payload.type === 'ACTION_TRACE' &&
+        payload.phase === 'TRANSITION' &&
+        payload.behaviorId === 'REORG'
+      );
+    });
+    // This is a runner-object regression, rather than a helper probe: every
+    // REORG that actually completed during TRANSITION must leave that phase.
+    expect(transitionReorganizations).not.toHaveLength(0);
+    for (const trace of transitionReorganizations) {
+      expect(payloadOf(trace)).toMatchObject({
+        transitionFallback: true,
+        transitionFallbackReason: 'REORG_COMPLETED',
+      });
+    }
   }, 120_000);
 
   it('does not turn a live-ball action into a same-side dead-ball boundary', () => {
@@ -401,6 +560,37 @@ describe('P02-003 B7 headless runner identity', () => {
         ).toBe(true);
       }
     }
+  });
+
+  it('keeps a credited pressured turnover as the transition control origin', () => {
+    const initial = createModelBSession(makeP02MatchInput());
+    // commitModelBActiveSegment prefixes POSSESSION_STARTED, so the controlled
+    // TURNOVER is transition event offset 2: START -> CLOCK -> TURNOVER.
+    const turnoverEventId = predictModelBEventId(initial, 2, 'TURNOVER');
+    const afterCreditedSteal = commitModelBActiveSegment(initial, {
+      eventPayloads: [
+        { type: 'CLOCK_ADVANCED', seconds: 1 },
+        {
+          type: 'TURNOVER',
+          playerId: 'HOME-01',
+          turnoverKind: 'PRESSURED_LIVE_BALL',
+        },
+        { type: 'STEAL', playerId: 'AWAY-01', sourceEventId: turnoverEventId },
+      ],
+      resolution: 'POSSESSION_CHANGE',
+    });
+    const completed = runToEnd(afterCreditedSteal);
+    const contexts = completed.facts.filter((fact) => {
+      const payload = fact.payload as Record<string, unknown>;
+      return payload.type === 'TRANSITION_CONTEXT' && payload.originEventId === turnoverEventId;
+    });
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]!.payload).toMatchObject({
+      origin: 'PRESSURED_LIVE_BALL',
+      originEventId: turnoverEventId,
+      controllerId: 'AWAY-01',
+    });
   });
 
   it('orchestrates the complete frozen selectable matrix rather than a runner-local subset', () => {

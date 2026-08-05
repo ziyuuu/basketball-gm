@@ -750,6 +750,19 @@ export const MODEL_B_EXECUTION_BLEND_REGISTRY = deepFreeze({
     ['tacticalUnderstanding', 250],
     ['ballHandling', 200],
   ],
+  TRANSITION_CONTROLLER: [
+    ['athleticism', 500],
+    ['ballHandling', 300],
+    ['tacticalUnderstanding', 200],
+  ],
+  TRANSITION_SUPPORT: [
+    ['athleticism', 600],
+    ['tacticalUnderstanding', 400],
+  ],
+  TRANSITION_RETREAT: [
+    ['athleticism', 600],
+    ['tacticalUnderstanding', 400],
+  ],
 } as const);
 
 export type ModelBExecutionBlend = keyof typeof MODEL_B_EXECUTION_BLEND_REGISTRY;
