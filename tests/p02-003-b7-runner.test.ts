@@ -3,6 +3,7 @@ import {
   MatchProtocolBundleSchema,
   MODEL_B_BEHAVIOR_REGISTRY,
   MODEL_B_RUNNER_SELECTABLE_BEHAVIOR_IDS,
+  calculateModelBTransitionFallbackProbabilityMilli,
   calculateModelBTransitionFormationProbabilityMilli,
   createModelBSession,
   deriveModelBSubUint64,
@@ -222,6 +223,24 @@ describe('P02-003 B7 headless runner identity', () => {
         pace: 'BALANCED',
       }),
     ).toBe(229);
+    expect(
+      calculateModelBTransitionFallbackProbabilityMilli({
+        offenseExecutionMilli: 65_950,
+        defenseExecutionMilli: 40_000,
+        elapsedTransitionDecisionSeconds: 4,
+        transitionWindowSeconds: 6,
+        completedTransitionOffenseActions: 1,
+      }),
+    ).toBe(296);
+    expect(
+      calculateModelBTransitionFallbackProbabilityMilli({
+        offenseExecutionMilli: 65_950,
+        defenseExecutionMilli: 80_000,
+        elapsedTransitionDecisionSeconds: 4,
+        transitionWindowSeconds: 6,
+        completedTransitionOffenseActions: 1,
+      }),
+    ).toBe(456);
   });
 
   it('links PASS, defensive actions and transition fallback to later runner effects', () => {
@@ -239,6 +258,11 @@ describe('P02-003 B7 headless runner identity', () => {
     ];
     const facts = sessions.flatMap((session) => session.facts);
     const events = sessions.flatMap((session) => session.events);
+    const anchorByHash = new Map(
+      sessions.flatMap((session) =>
+        session.anchors.map((anchor) => [anchor.anchorHash, anchor] as const),
+      ),
+    );
     const eventById = new Map(events.map((event) => [event.eventId, event]));
     const payloadOf = (fact: (typeof facts)[number]) => fact.payload as Record<string, unknown>;
 
@@ -275,9 +299,12 @@ describe('P02-003 B7 headless runner identity', () => {
       expect(sameSource.filter((fact) => payloadOf(fact).type === 'ACTION_TRACE')).toHaveLength(1);
     }
 
-    for (const trace of facts.filter(
+    const stealTraces = facts.filter(
       (fact) => payloadOf(fact).type === 'ACTION_TRACE' && payloadOf(fact).behaviorId === 'STLTRY',
-    )) {
+    );
+    for (const trace of stealTraces) {
+      // STLTRY only arms a candidate.  It must not fabricate a turnover before
+      // TURNOVER_OCCURRENCE resolves, so an empty immediate result list is valid.
       expect(payloadOf(trace).resultEventIds).toEqual([]);
     }
     for (const steal of events.filter((event) => event.payload.type === 'STEAL')) {
@@ -287,11 +314,55 @@ describe('P02-003 B7 headless runner identity', () => {
         type: 'TURNOVER',
         turnoverKind: 'PRESSURED_LIVE_BALL',
       });
+      expect(
+        stealTraces.some((trace) => {
+          const tracePayload = payloadOf(trace);
+          const traceClock = eventById.get(trace.sourceEventIds[0]!);
+          return (
+            Array.isArray(tracePayload.actorIds) &&
+            tracePayload.actorIds.includes(steal.payload.playerId) &&
+            traceClock?.period === steal.period &&
+            traceClock?.possessionIndex === steal.possessionIndex
+          );
+        }),
+      ).toBe(true);
+      const turnoverIndex = events.findIndex((event) => event.eventId === turnover?.eventId);
+      expect(events[turnoverIndex + 1]?.payload).toMatchObject({
+        type: 'STEAL',
+        playerId: steal.payload.playerId,
+      });
+      expect(events[turnoverIndex + 2]?.payload).toMatchObject({
+        type: 'POSSESSION_ENDED',
+      });
+      const turnoverAnchor = anchorByHash.get(turnover?.previousAnchorHash ?? '');
+      const endedPossession = events[turnoverIndex + 2];
+      expect(endedPossession?.payload).toMatchObject({
+        type: 'POSSESSION_ENDED',
+        side: turnoverAnchor?.possession.side,
+      });
+      const nextAnchor = anchorByHash.get(endedPossession?.nextAnchorHash ?? '');
+      expect(nextAnchor?.possession.side).toBe(
+        turnoverAnchor?.possession.side === 'HOME' ? 'AWAY' : 'HOME',
+      );
     }
 
     const transitionContexts = facts.filter(
       (fact) => payloadOf(fact).type === 'TRANSITION_CONTEXT',
     );
+    const transitionTraces = facts.filter(
+      (fact) =>
+        payloadOf(fact).type === 'ACTION_TRACE' && payloadOf(fact).behaviorId === 'TRANSITIOND',
+    );
+    // A context alone is not proof that transition defense ran: the runner must
+    // select and materialize TRANSITIOND after the originating rebound/turnover.
+    expect(transitionTraces).not.toHaveLength(0);
+    expect(transitionTraces).toHaveLength(transitionContexts.length);
+    expect(
+      transitionTraces.some((fact) => payloadOf(fact).resultCode === 'TRANSITION_FORMED'),
+    ).toBe(true);
+    expect(
+      transitionTraces.some((fact) => payloadOf(fact).resultCode === 'TRANSITION_STOPPED'),
+    ).toBe(true);
     expect(transitionContexts.some((fact) => payloadOf(fact).formed === true)).toBe(true);
     expect(transitionContexts.some((fact) => payloadOf(fact).formed === false)).toBe(true);
     expect(

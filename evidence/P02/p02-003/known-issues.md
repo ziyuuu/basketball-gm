@@ -13,3 +13,6 @@
   trust-root or other security mechanism is included. The one negative test is protocol/replay
   consistency only, not player-save protection.
 - The only rotation behavior exercised here is the pre-existing `internal/test` neutral policy.
+- The B1--B7 focused suite, Web/CLI builds, CLI batch smoke and complete `pnpm check` have terminal
+  passing results. The earlier long-command output limitation was resolved by using one persistent
+  terminal session; it is not a product-contract issue.

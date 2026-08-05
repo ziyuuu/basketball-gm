@@ -562,6 +562,37 @@ export function calculateModelBTransitionFormationProbabilityMilli(
   );
 }
 
+/** Frozen D.14 fallback probability; comparison still uses the isolated subvalue. */
+export function calculateModelBTransitionFallbackProbabilityMilli(
+  input: Readonly<{
+    offenseExecutionMilli: number;
+    defenseExecutionMilli: number;
+    elapsedTransitionDecisionSeconds: number;
+    transitionWindowSeconds: number;
+    completedTransitionOffenseActions: number;
+  }>,
+): number {
+  if (
+    !Number.isSafeInteger(input.elapsedTransitionDecisionSeconds) ||
+    !Number.isSafeInteger(input.transitionWindowSeconds) ||
+    input.transitionWindowSeconds < 1 ||
+    !Number.isSafeInteger(input.completedTransitionOffenseActions) ||
+    input.completedTransitionOffenseActions < 1
+  ) {
+    throw new Error(
+      'Model B transition fallback requires a positive integer duration and action count.',
+    );
+  }
+  return clampFixedPoint(
+    200 +
+      roundHalfUp((input.defenseExecutionMilli - input.offenseExecutionMilli) * 40, 10_000) +
+      roundHalfUp(300 * input.elapsedTransitionDecisionSeconds, input.transitionWindowSeconds) +
+      50 * Math.max(0, input.completedTransitionOffenseActions - 1),
+    50,
+    900,
+  );
+}
+
 class SegmentRuntime {
   readonly session: ModelBSession;
   readonly offenseSide: MatchSide;
@@ -1191,17 +1222,13 @@ function applyTransitionFallback(runtime: SegmentRuntime): boolean {
     runtime.markTransitionFallback();
     return true;
   }
-  const probabilityMilli = clampFixedPoint(
-    200 +
-      roundHalfUp(
-        (runtime.transitionDefenseExecutionMilli! - runtime.transitionOffenseExecutionMilli!) * 40,
-        10_000,
-      ) +
-      roundHalfUp(300 * runtime.decisionElapsedSeconds, runtime.transitionWindowSeconds!) +
-      50 * Math.max(0, runtime.completedTransitionOffenseActions - 1),
-    50,
-    900,
-  );
+  const probabilityMilli = calculateModelBTransitionFallbackProbabilityMilli({
+    offenseExecutionMilli: runtime.transitionOffenseExecutionMilli!,
+    defenseExecutionMilli: runtime.transitionDefenseExecutionMilli!,
+    elapsedTransitionDecisionSeconds: runtime.decisionElapsedSeconds,
+    transitionWindowSeconds: runtime.transitionWindowSeconds!,
+    completedTransitionOffenseActions: runtime.completedTransitionOffenseActions,
+  });
   const raw = deriveModelBSubUint64(
     runtime.transitionRoot,
     'FALLBACK',

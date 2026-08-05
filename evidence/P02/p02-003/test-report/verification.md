@@ -53,22 +53,37 @@ The full `pnpm check` command includes the existing P00, P01, P02-001, P02-002 a
 matrices as well as the B7 suite. It remains the evidence for unchanged frozen-contract regression;
 this round does not replace Legacy evidence or alter B1R–B6R product contracts.
 
-## Final verification results
+## Follow-up verification results
 
 ```bash
-timeout 600s pnpm check
-pnpm --filter @sunny-court/web build
-pnpm --filter @sunny-court/sim-cli build
-node apps/sim-cli/dist/cli.js run --seed b7-second-round-cli-smoke --json \
-  --save-dir /tmp/p02-003-b7-cli-smoke
+pnpm exec vitest run tests/p02-003-b1-registries.test.ts --reporter=verbose
+pnpm exec vitest run tests/p02-003-b2-session.test.ts --reporter=verbose
+pnpm exec vitest run tests/p02-003-b3-clock-rules.test.ts --reporter=verbose
+pnpm exec vitest run tests/p02-003-b4-behavior-selection.test.ts --reporter=verbose
+pnpm exec vitest run tests/p02-003-b5-basketball-results.test.ts --reporter=verbose
+pnpm exec vitest run tests/p02-003-b6-state-rules.test.ts --reporter=verbose
+pnpm exec vitest run tests/p02-003-b7-runner.test.ts --reporter=verbose
+pnpm exec vitest run tests/p02-003-b7-runner.test.ts --reporter=verbose -t SCRIMMAGE
+pnpm exec vitest run tests/p02-003-b7-runner.test.ts --reporter=verbose -t 'rejects a transcript'
+pnpm build
+pnpm sim:batch
 ```
 
-All commands exited `0`. `pnpm check` passed Prettier, ESLint, TypeScript, the 9-package boundary
-check, 23 test files / 252 tests, the Web production build, and the CLI production build. Vitest
-reported 177.28 seconds. The separate Web build completed in 463 ms; the separate CLI build in
-294 ms; and the CLI smoke completed the existing three-year workflow with
-`stateHash = fnv64:2ea0523a4dfa1b8e` and `replayHash = fnv64:24810423f0c73f68`.
+All listed focused commands exited `0`. The B1--B6 files passed 73 tests. The B7 runner file
+passed its 10 tests; because the all-case reporter output ends before the final two long cases in
+this environment, SCRIMMAGE equality and the replay/protocol negative were also run by name and
+each passed with a terminal summary. `pnpm build` passed TypeScript plus the Web and CLI production
+builds. `pnpm sim:batch` completed 1,000 / 1,000 requested runs with 0 failures, 10 replay samples,
+0 replay mismatches, 0 calendar/operation-week violations and 0 illegal terminal states.
 
-There is no repository-provided browser interaction smoke command; the separate Vite production
-build is the available Web smoke evidence. No performance or B8 conclusion is implied by test
-timeout settings or elapsed time.
+The repository-prescribed complete command was subsequently run through one persistent terminal
+session and exited `0`:
+
+```bash
+pnpm check
+```
+
+It passed Prettier, ESLint, TypeScript, the 9-package boundary check, 23 test files / 252 tests,
+the Web production build and the CLI production build. Vitest reported 177.20 seconds. There is no
+repository-provided browser interaction smoke command; the Vite production build is the available
+Web smoke evidence. No performance or B8 conclusion is implied by the verification above.
