@@ -1,7 +1,7 @@
-# P02-003 v2.9-R2 B7 Second-round Verification Report
+# P02-003 v2.9-R2 B7 Third-round Verification Report
 
 This is development-thread verification for a local successor to rejected Candidate
-`66684aff61a2cd7407813c4c814ccd1388aee0fa`. It is not independent Owner review, a B7 acceptance,
+`97d6ed55dd31852ed7538b39bae3d55d57ae6e0b`. It is not independent Owner review, a B7 acceptance,
 or a Gate B decision. Historical commands below describe the earlier candidate only; this document
 separates them from current-successor evidence.
 
@@ -26,16 +26,16 @@ save/security and later milestones are excluded.
 The following current-successor commands have terminal passing results:
 
 ```bash
-pnpm exec vitest run tests/p02-003-b7-runner.test.ts \
-  --testNamePattern='executes every frozen|supplementary arithmetic|formal runner object|freezes transition|does not turn a live-ball|keeps a credited|orchestrates the complete'
-pnpm typecheck
-pnpm exec prettier --check packages/domain/src/match/model-b/runner.ts \
-  tests/p02-003-b7-runner.test.ts tests/helpers/p02-003-fixtures.ts
-git diff --check
+pnpm exec vitest run tests/p02-003-b7-runner.test.ts
+pnpm check
+pnpm sim:batch
+pnpm evidence:manifest
 ```
 
-The first B7 group passed 7 tests. The remaining causal-chain, OFFICIAL, FRIENDLY, SCRIMMAGE and
-replay-negative cases were then each re-run by name and passed, covering all 12 current B7 tests.
+The complete B7 file passed 13/13 tests. New runner regressions cover a non-empty deterministic
+`WINDOW_EXPIRED` fallback record and a 16-seed negative sequence `TURNOVER → STEAL →
+POSSESSION_ENDED`, then made `SHOT → SCORE → POSSESSION_ENDED`: the following ordinary possession
+does not receive a stale transition origin.
 The V25 runner-object test is non-vacuous: it creates a Model B
 session with a fixed keyed-RNG seed, executes the actual live segment/commit path, and asserts the
 complete Event/Fact/Anchor result for `0→11→13→14→30`, `H1→H2→H3→H2`, a final H2 violation, no
@@ -44,7 +44,7 @@ supplementary arithmetic coverage only.
 
 The Web and CLI production builds completed successfully. A current successor CLI batch also
 completed 1,000/1,000 with 0 failures, 10 replay samples, 0 replay mismatches, 0 calendar or
-operation-week violations and 0 illegal terminal states (21,698.67 ms). The P02 manifest validates
+operation-week violations and 0 illegal terminal states (21,289.28 ms). The P02 manifest validates
 35/35.
 
 The repository-prescribed complete command also exited `0` in a persistent terminal session:
@@ -53,8 +53,8 @@ The repository-prescribed complete command also exited `0` in a persistent termi
 pnpm check
 ```
 
-It passed Prettier, ESLint, TypeScript, the 9-package boundary check, 23 test files / 254 tests,
-the Web production build and the CLI production build. Vitest reported 181.66 seconds. This is
+It passed Prettier, ESLint, TypeScript, the 9-package boundary check, 23 test files / 255 tests,
+the Web production build and the CLI production build. Vitest reported 183.16 seconds. This is
 development verification only; it is not an Owner acceptance or Gate B decision.
 
 ## Historical directed B7 verification (predecessor only)

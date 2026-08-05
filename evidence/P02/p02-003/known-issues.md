@@ -1,7 +1,7 @@
-# P02-003 v2.9-R2 B7 Second-round Known Issues and Deferred Work
+# P02-003 v2.9-R2 B7 Third-round Known Issues and Deferred Work
 
-- `66684aff…` is the rejected Candidate. The current local successor implements the four Owner
-  development fixes, has completed local verification, and awaits publication and independent
+- `97d6ed55…` is the rejected Candidate. The current local successor closes the two remaining Owner
+  transition findings, has completed local verification, and awaits publication and independent
   main-thread review; none is a B7 acceptance decision.
 - B8 remains a hard blocker. This B7 evidence deliberately contains no 10,000-match/60-second
   performance claim, fixed-seed calibration statistic, balance conclusion, or realism conclusion.
@@ -14,6 +14,5 @@
   consistency only, not player-save protection.
 - The only rotation behavior exercised here is the pre-existing `internal/test` neutral policy.
 - Historical passing results for the rejected Candidate are not reused as evidence for this local
-  successor. Its complete B7 suite (run by named cases), typecheck, formatting, diff check, Web/CLI
-  builds, 1,000-run batch smoke, complete `pnpm check`, and P02 manifest all have terminal passing
-  results.
+  successor. Its complete B7 suite (13 tests), typecheck, formatting, diff check, Web/CLI builds,
+  1,000-run batch smoke, complete `pnpm check`, and P02 manifest all have terminal passing results.

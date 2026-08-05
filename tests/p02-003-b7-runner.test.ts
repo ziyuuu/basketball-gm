@@ -530,6 +530,53 @@ describe('P02-003 B7 headless runner identity', () => {
         transitionFallbackReason: 'REORG_COMPLETED',
       });
     }
+
+    const windowExpired = facts.filter((fact) => {
+      const payload = payloadOf(fact);
+      return (
+        payload.type === 'ACTION_TRACE' &&
+        payload.phase === 'TRANSITION' &&
+        payload.transitionFallbackReason === 'WINDOW_EXPIRED'
+      );
+    });
+    // The fixed runner samples deliberately exercise the terminal guard.  A
+    // window expiry must close the same transition context without an RNG
+    // fallback draw or another event/possession boundary.
+    expect(windowExpired).not.toHaveLength(0);
+    for (const trace of windowExpired) {
+      const tracePayload = payloadOf(trace);
+      const context = transitionContexts.find((candidate) => {
+        const payload = payloadOf(candidate);
+        return (
+          payload.formed === true &&
+          payload.period === tracePayload.period &&
+          payload.possessionIndex === tracePayload.possessionIndex &&
+          payload.segmentIndex === tracePayload.segmentIndex
+        );
+      });
+      expect(context).toBeDefined();
+      const laterTrace = facts.find((candidate) => {
+        const payload = payloadOf(candidate);
+        return (
+          payload.type === 'ACTION_TRACE' &&
+          (payload.phase === 'HALF_COURT_NORMAL' || payload.phase === 'LATE_CLOCK') &&
+          payload.period === tracePayload.period &&
+          payload.possessionIndex === tracePayload.possessionIndex &&
+          payload.segmentIndex === tracePayload.segmentIndex &&
+          payload.behaviorSelectionOrdinal > tracePayload.behaviorSelectionOrdinal
+        );
+      });
+      expect(laterTrace).toBeDefined();
+      const laterPhase = payloadOf(laterTrace!).phase;
+      expect(payloadOf(context!)).toMatchObject({
+        fallback: {
+          occurred: true,
+          reason: 'WINDOW_EXPIRED',
+          sourceBehaviorOrdinal: tracePayload.behaviorSelectionOrdinal,
+        },
+        finalPhase: laterPhase === 'LATE_CLOCK' ? 'LATE_CLOCK' : 'HALF_COURT',
+      });
+    }
   }, 120_000);
 
   it('does not turn a live-ball action into a same-side dead-ball boundary', () => {
@@ -591,6 +638,51 @@ describe('P02-003 B7 headless runner identity', () => {
       originEventId: turnoverEventId,
       controllerId: 'AWAY-01',
     });
+  });
+
+  it('does not reuse an older credited steal across a later scoring possession', () => {
+    for (let seed = 0; seed < 16; seed += 1) {
+      const input = makeP02MatchInput({
+        rootSeed: `b7-transition-tail-${seed}`,
+        matchSeed: [seed + 101, seed + 103, seed + 107, seed + 109],
+      });
+      let session = createModelBSession(input);
+      const initialAnchor = session.anchors.at(-1)!;
+      const initialSide = initialAnchor.possession.side;
+      const recoverySide = initialSide === 'HOME' ? 'AWAY' : 'HOME';
+      const initialLineup = initialAnchor.lineups[initialSide === 'HOME' ? 'home' : 'away'];
+      const recoveryLineup = initialAnchor.lineups[recoverySide === 'HOME' ? 'home' : 'away'];
+      const handlerId = initialLineup.PG;
+      const recoveryId = recoveryLineup.PG;
+      const turnoverEventId = predictModelBEventId(session, 2, 'TURNOVER');
+      session = commitModelBActiveSegment(session, {
+        eventPayloads: [
+          { type: 'CLOCK_ADVANCED', seconds: 1 },
+          {
+            type: 'TURNOVER',
+            playerId: handlerId,
+            turnoverKind: 'PRESSURED_LIVE_BALL',
+          },
+          { type: 'STEAL', playerId: recoveryId, sourceEventId: turnoverEventId },
+        ],
+        resolution: 'POSSESSION_CHANGE',
+      });
+      session = commitModelBActiveSegment(session, {
+        eventPayloads: [
+          { type: 'CLOCK_ADVANCED', seconds: 1 },
+          { type: 'SHOT', shooterId: recoveryId, zone: 'MID_RANGE', made: true },
+          { type: 'SCORE', side: recoverySide, playerId: recoveryId, points: 2 },
+        ],
+        resolution: 'POSSESSION_CHANGE',
+      });
+
+      const afterOrdinaryEntry = stepToNextControlBoundary(session);
+      expect(
+        afterOrdinaryEntry.facts.some(
+          (fact) => (fact.payload as Record<string, unknown>).type === 'TRANSITION_CONTEXT',
+        ),
+      ).toBe(false);
+    }
   });
 
   it('orchestrates the complete frozen selectable matrix rather than a runner-local subset', () => {

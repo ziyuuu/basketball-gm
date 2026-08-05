@@ -641,10 +641,29 @@ function transitionOrigin(session: ModelBSession): TransitionOrigin | null {
   const anchor = current(session);
   if (pendingPossessionStartCount(session) === 0 || anchor.possession.segmentIndex !== 0)
     return null;
-  // A credited STEAL is attribution for the turnover, not a new control origin.
-  // Walk the current atomic tail so TURNOVER remains authoritative when the
-  // canonical TURNOVER -> STEAL -> POSSESSION_ENDED ordering is present.
-  const event = [...session.events]
+  // Only the possession-ending atomic tail that directly created this new
+  // possession can supply a transition origin.  A credited STEAL is
+  // attribution inside that tail, so the preceding pressured TURNOVER remains
+  // authoritative; older control events must never cross a later SCORE,
+  // dead-ball turnover, period boundary, or possession end.
+  const previousPossessionIndex = anchor.possession.possessionIndex - 1;
+  const tailEnd = session.events.findLastIndex(
+    (event) =>
+      event.period === anchor.period &&
+      event.possessionIndex === previousPossessionIndex &&
+      event.payload.type === 'POSSESSION_ENDED',
+  );
+  if (tailEnd < 0) return null;
+  const tailStart = session.events.findLastIndex(
+    (event, index) =>
+      index <= tailEnd &&
+      event.period === anchor.period &&
+      event.possessionIndex === previousPossessionIndex &&
+      event.payload.type === 'POSSESSION_STARTED',
+  );
+  if (tailStart < 0) return null;
+  const event = session.events
+    .slice(tailStart, tailEnd + 1)
     .reverse()
     .find(({ payload }) => payload.type === 'REBOUND' || payload.type === 'TURNOVER');
   if (event?.payload.type === 'REBOUND' && event.payload.kind === 'DEFENSIVE') {
@@ -955,7 +974,7 @@ class SegmentRuntime {
               ? traceOrdinal
               : null,
         },
-        finalPhase: 'HALF_COURT',
+        finalPhase: this.phase === 'LATE_CLOCK' ? 'LATE_CLOCK' : 'HALF_COURT',
       },
     };
   }
@@ -1090,10 +1109,10 @@ function phaseGuard(runtime: SegmentRuntime): boolean {
   if (remaining > runtime.terminalReserveSeconds) return false;
   if (remaining > 0) runtime.appendDecisionClock(remaining);
   if (runtime.phase === 'TRANSITION') {
-    runtime.phase =
-      runtime.decisionElapsedSeconds >= runtime.normalTargetSeconds
-        ? 'LATE_CLOCK'
-        : 'HALF_COURT_NORMAL';
+    // Window expiry is a deterministic fallback with no probability draw.  It
+    // must use the same recording path as every other transition exit so the
+    // context, trace, and later phase describe one causal result.
+    return applyTransitionFallback(runtime, 'WINDOW_EXPIRED');
   } else {
     runtime.phase = 'LATE_CLOCK';
   }
@@ -1499,7 +1518,7 @@ function applyTransitionFallback(
     runtime.markTransitionFallback(reason);
     return true;
   };
-  runtime.completedTransitionOffenseActions += 1;
+  if (trigger !== 'WINDOW_EXPIRED') runtime.completedTransitionOffenseActions += 1;
   if (
     trigger === 'WINDOW_EXPIRED' ||
     trigger === 'REORG_COMPLETED' ||

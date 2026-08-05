@@ -1,8 +1,9 @@
-# P02-003 B7 Second-round Runner, Protocol and Replay Remediation
+# P02-003 B7 Third-round Transition Remediation
 
-This implementation-thread record addresses the B7 `REQUEST CHANGES` review of rejected Candidate
-`b228ab9c1e46127ba663a01096fc8f365d5cf1f9`. It implements the frozen v6 observable contract; it
-is not an independent audit, a Gate B decision, or an authorization to start B8.
+This implementation-thread record addresses the two remaining B7 `REQUEST CHANGES` findings on
+rejected Candidate `97d6ed55dd31852ed7538b39bae3d55d57ae6e0b`. It implements the frozen v6
+observable contract; it is not an independent audit, a Gate B decision, or an authorization to
+start B8.
 
 ## Remediated blockers
 
@@ -18,12 +19,16 @@ is not an independent audit, a Gate B decision, or an authorization to start B8.
    receiver handler changes, new shooter/new defender selection, opportunity quality, foul, block,
    free throw and rebound tails are connected. A field-goal flight consumes period/fatigue only;
    buzzer release and shooting-foul ordering follow v6 D.10.
-4. Transition entry derives from real defensive rebound/pressured-turnover origins, including a
-   credited `STEAL`'s referenced pressured-turnover Event. It derives the controller, two
+4. Transition entry derives only from the possession-ending atomic tail that directly created the
+   current new possession: a real defensive rebound or pressured turnover, including a credited
+   `STEAL`'s referenced pressured-turnover Event in that same tail. It never searches beyond a
+   later score, dead-ball turnover, period boundary or possession end. It derives the controller, two
    `OFF_SUPPORT/<playerId>` supporters and three `DEF_RETREAT/<playerId>` retreaters before
    `TRANSITIOND`, records those identities in both context and trace, and uses them in formation
-   and fallback execution. `REORG_COMPLETED` and window expiry leave TRANSITION deterministically;
-   only a nonterminal window action may read the frozen strict-less-than fallback subvalue.
+   and fallback execution. `REORG_COMPLETED` and window expiry leave TRANSITION through the one
+   deterministic fallback path, which updates the same trace/context pair without consuming a
+   `FALLBACK/<n>` subvalue, time, Event, possession or segment. Only a nonterminal window action
+   may read the frozen strict-less-than fallback subvalue.
 5. Fact materialization resolves Action Trace result event indices, then sorts all Fact drafts by
    source local sequence, subtype rank and intra-type ordinal before deriving dense Fact identity.
    Replay reconstructs and validates the accepted authority bundle without re-running selectors or
@@ -44,6 +49,10 @@ commitModelBActiveSegment`, generating the real Event/Fact/Anchor chain for
   result/identity across `stepToNextControlBoundary`, `runToEnd` and accepted-authority replay.
 - One modified protocol/transcript identity is rejected as a replay consistency negative. It is not
   anti-tamper or anti-cheat coverage.
+- Runner regressions include a non-empty window-expiry sample, asserting the common trace/context
+  fallback record and its following HALF_COURT/LATE phase, plus a 16-seed negative in which a
+  pressured credited steal is followed by a made basket: the following ordinary possession must
+  not receive `TRANSITION_CONTEXT` or forced `TRANSITIOND` from the old steal.
 
 ## Scope boundary
 
