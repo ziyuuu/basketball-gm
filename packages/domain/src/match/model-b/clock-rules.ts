@@ -28,12 +28,52 @@ function currentAnchor(session: ModelBSession): MatchAnchor {
   return anchor;
 }
 
+/**
+ * A release/flight clock advances the period and fatigue, but the ball is no
+ * longer in the offense's decision domain.  The closed Event schema does not
+ * carry a clock-domain field, so the canonical tail position is the authority:
+ * a field-goal flight is the second CLOCK in `CLOCK(action) → CLOCK(flight)
+ * → SHOT`, while a final-free-throw rebound flight is `FREE_THROW → CLOCK
+ * → REBOUND`. `CLOCK(action) → SHOT` is a legal buzzer release and remains a
+ * decision clock. All other CLOCK_ADVANCED events consume the shot clock.
+ */
+type ModelBClockEventLike = Pick<MatchEvent, 'payload'> | MatchEvent['payload'];
+
+function payloadOf(event: ModelBClockEventLike | undefined): MatchEvent['payload'] | undefined {
+  return event !== undefined && 'payload' in event ? event.payload : event;
+}
+
+export function isModelBPostReleaseClock(
+  events: readonly ModelBClockEventLike[],
+  index: number,
+): boolean {
+  const event = payloadOf(events[index]);
+  if (event?.type !== 'CLOCK_ADVANCED') return false;
+  const next = payloadOf(events[index + 1]);
+  if (next?.type === 'SHOT') return payloadOf(events[index - 1])?.type === 'CLOCK_ADVANCED';
+  if (next?.type !== 'REBOUND') return false;
+  return payloadOf(events[index - 1])?.type === 'FREE_THROW';
+}
+
+function decisionClockSeconds(events: readonly ModelBClockEventLike[]): number {
+  return events.reduce((total, event, index) => {
+    const payload = payloadOf(event);
+    return (
+      total +
+      (payload?.type === 'CLOCK_ADVANCED' && !isModelBPostReleaseClock(events, index)
+        ? payload.seconds
+        : 0)
+    );
+  }, 0);
+}
+
 export function rebuildModelBShotClockSeconds(
   anchor: MatchAnchor,
   events: readonly MatchEvent[],
 ): number {
   let shotClockSeconds = MODEL_B_PARAMETER_REGISTRY.shotClock.newPossessionSeconds;
-  for (const event of events.slice(0, anchor.eventCursor)) {
+  const prefix = events.slice(0, anchor.eventCursor);
+  for (const [index, event] of prefix.entries()) {
     if (
       event.period !== anchor.period ||
       event.possessionIndex !== anchor.possession.possessionIndex
@@ -44,7 +84,10 @@ export function rebuildModelBShotClockSeconds(
       shotClockSeconds = MODEL_B_PARAMETER_REGISTRY.shotClock.newPossessionSeconds;
     } else if (event.payload.type === 'REBOUND' && event.payload.kind === 'OFFENSIVE') {
       shotClockSeconds = MODEL_B_PARAMETER_REGISTRY.shotClock.offensiveReboundSeconds;
-    } else if (event.payload.type === 'CLOCK_ADVANCED') {
+    } else if (
+      event.payload.type === 'CLOCK_ADVANCED' &&
+      !isModelBPostReleaseClock(prefix, index)
+    ) {
       shotClockSeconds = Math.max(0, shotClockSeconds - event.payload.seconds);
     }
   }
@@ -88,6 +131,27 @@ function shiftFactSources(
   return facts?.map((fact) => ({
     ...fact,
     sourceEventIndexes: fact.sourceEventIndexes.map((index) => index + prefixCount),
+    payload:
+      fact.payload !== null && typeof fact.payload === 'object' && !Array.isArray(fact.payload)
+        ? (() => {
+            const payload = fact.payload as Record<string, unknown>;
+            if (
+              payload.type !== 'ACTION_TRACE' ||
+              !Array.isArray(payload.resultEventDraftIndexes)
+            ) {
+              return fact.payload;
+            }
+            return {
+              ...payload,
+              resultEventDraftIndexes: payload.resultEventDraftIndexes.map((index) => {
+                if (!Number.isSafeInteger(index) || index < 0) {
+                  throw new Error('Action Trace result event draft indexes must be non-negative.');
+                }
+                return index + prefixCount;
+              }),
+            };
+          })()
+        : fact.payload,
   }));
 }
 
@@ -108,7 +172,8 @@ export function commitModelBActiveSegment(
     throw new Error('An active segment cannot consume more than the remaining period clock.');
   }
   const shotClockSeconds = rebuildModelBShotClockSeconds(anchor, session.events);
-  if (clockSeconds > shotClockSeconds) {
+  const decisionSeconds = decisionClockSeconds(draft.eventPayloads);
+  if (decisionSeconds > shotClockSeconds) {
     throw new Error('An active segment cannot consume more than the rebuilt shot clock.');
   }
   const reachesPeriodEnd = clockSeconds === anchor.periodClockSeconds;
@@ -125,7 +190,7 @@ export function commitModelBActiveSegment(
       throw new Error('OFFENSIVE_REBOUND resolution requires an offensive REBOUND event.');
     }
   }
-  const reachesShotClockEnd = clockSeconds === shotClockSeconds;
+  const reachesShotClockEnd = decisionSeconds === shotClockSeconds;
   if (
     reachesShotClockEnd &&
     !reachesPeriodEnd &&

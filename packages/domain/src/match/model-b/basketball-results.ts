@@ -101,6 +101,7 @@ export function buildModelBCreationFactDraft(
     possessionIndex: number;
     segmentIndex: number;
     nextBehaviorId: ModelBBehaviorId | null;
+    behaviorSelectionOrdinal?: number;
   }>,
 ): ModelBFactDraft {
   if (!CREATION_FACT_BEHAVIORS.has(input.behaviorId)) {
@@ -126,6 +127,9 @@ export function buildModelBCreationFactDraft(
       possessionIndex: input.possessionIndex,
       segmentIndex: input.segmentIndex,
       nextBehaviorId: input.nextBehaviorId,
+      ...(input.behaviorSelectionOrdinal === undefined
+        ? {}
+        : { behaviorSelectionOrdinal: input.behaviorSelectionOrdinal }),
     }),
   });
 }
@@ -145,6 +149,7 @@ export function buildModelBDefensiveActionFactDraft(
     period: number;
     possessionIndex: number;
     segmentIndex: number;
+    behaviorSelectionOrdinal?: number;
   }>,
 ): ModelBFactDraft {
   if (input.offenseSide === input.defenseSide) {
@@ -194,6 +199,9 @@ export function buildModelBDefensiveActionFactDraft(
       period: input.period,
       possessionIndex: input.possessionIndex,
       segmentIndex: input.segmentIndex,
+      ...(input.behaviorSelectionOrdinal === undefined
+        ? {}
+        : { behaviorSelectionOrdinal: input.behaviorSelectionOrdinal }),
     }),
   });
 }
@@ -293,6 +301,14 @@ export function buildModelBPossessionHandlerFactDraft(
     period: number;
     possessionIndex: number;
     segmentIndex: number;
+    reason?:
+      | 'SEGMENT_CARRY'
+      | 'NEW_POSSESSION_ORIGIN'
+      | 'PASS_RECEIVER'
+      | 'OFFENSIVE_REBOUND_CARRY'
+      | 'SAME_SIDE_DEAD_BALL_CARRY';
+    handlerSequence?: number;
+    originEventId?: string | null;
   }>,
 ): ModelBFactDraft {
   return Object.freeze({
@@ -304,6 +320,9 @@ export function buildModelBPossessionHandlerFactDraft(
       period: input.period,
       possessionIndex: input.possessionIndex,
       segmentIndex: input.segmentIndex,
+      reason: input.reason ?? 'SEGMENT_CARRY',
+      handlerSequence: input.handlerSequence ?? 0,
+      originEventId: input.originEventId ?? null,
     }),
   });
 }

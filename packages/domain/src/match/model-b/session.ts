@@ -66,6 +66,7 @@ export type ModelBSession = Readonly<{
 export type ModelBFactDraft = Readonly<{
   factKind: MatchFact['factKind'];
   sourceEventIndexes: readonly number[];
+  intraTypeOrdinal?: number;
   payload: CanonicalV2Value;
 }>;
 
@@ -482,7 +483,37 @@ function buildTransitionFacts(
   transitionEvents: readonly MatchEvent[],
   drafts: readonly ModelBFactDraft[],
 ): MatchFact[] {
-  return drafts.map((draft, draftIndex) => {
+  const subtypeRank = (payload: CanonicalV2Value): number => {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return 9;
+    const value = payload as Record<string, unknown>;
+    if (value.type === 'POSSESSION_HANDLER') return value.reason === 'PASS_RECEIVER' ? 6 : 0;
+    if (value.type === 'ACTION_TRACE') return 1;
+    if (value.type === 'PASS') return 2;
+    if (value.type === 'CREATION') return 3;
+    if (value.type === 'DEFENSIVE_ACTION') return 4;
+    if (value.type === 'TRANSITION_CONTEXT') return 5;
+    if (value.type === 'SHOT_CLOCK_VIOLATION') return 7;
+    if (value.type === 'TEAM_REBOUND') return 8;
+    return 9;
+  };
+  const intraTypeOrdinal = (draft: ModelBFactDraft): number => {
+    if (draft.intraTypeOrdinal !== undefined) return draft.intraTypeOrdinal;
+    if (
+      draft.payload === null ||
+      typeof draft.payload !== 'object' ||
+      Array.isArray(draft.payload)
+    ) {
+      return 0;
+    }
+    const payload = draft.payload as Record<string, unknown>;
+    const ordinal =
+      payload.handlerSequence ?? payload.behaviorSelectionOrdinal ?? payload.sequence ?? 0;
+    if (!Number.isSafeInteger(ordinal) || (ordinal as number) < 0) {
+      throw new Error('A Model B Fact intra-type ordinal must be a non-negative safe integer.');
+    }
+    return ordinal as number;
+  };
+  const resolved = drafts.map((draft) => {
     const sourceEventIds = [...new Set(draft.sourceEventIndexes)].map((eventIndex) => {
       const event = transitionEvents[eventIndex];
       if (event === undefined) throw new Error(`Fact source event index ${eventIndex} is invalid.`);
@@ -491,12 +522,47 @@ function buildTransitionFacts(
     sourceEventIds.sort(compareUtf16CodeUnits);
     if (sourceEventIds.length === 0)
       throw new Error('A Model B fact requires at least one source event.');
+    let payload = draft.payload;
+    if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+      const record = payload as Record<string, CanonicalV2Value>;
+      if (record.type === 'ACTION_TRACE' && Array.isArray(record.resultEventDraftIndexes)) {
+        const resultEventIds = record.resultEventDraftIndexes.map((index) => {
+          if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) {
+            throw new Error('An Action Trace result event draft index must be non-negative.');
+          }
+          const event = transitionEvents[index];
+          if (event === undefined)
+            throw new Error('An Action Trace result event draft index is invalid.');
+          return event.eventId;
+        });
+        const { resultEventDraftIndexes: _unused, ...resolvedPayload } = record;
+        payload = { ...resolvedPayload, resultEventIds };
+      }
+    }
+    return {
+      factKind: draft.factKind,
+      sourceEventIds,
+      sourceSequence: Math.min(
+        ...draft.sourceEventIndexes.map((index) => transitionEvents[index]!.localEventSequence),
+      ),
+      subtypeRank: subtypeRank(payload),
+      intraTypeOrdinal: intraTypeOrdinal(draft),
+      payload,
+    };
+  });
+  resolved.sort(
+    (left, right) =>
+      left.sourceSequence - right.sourceSequence ||
+      left.subtypeRank - right.subtypeRank ||
+      left.intraTypeOrdinal - right.intraTypeOrdinal,
+  );
+  return resolved.map((draft, draftIndex) => {
     const fact = {
       matchId: session.input.matchId,
       factId: GENESIS_MATCH_ANCHOR_HASH,
       factHash: GENESIS_MATCH_ANCHOR_HASH,
       factKind: draft.factKind,
-      sourceEventIds,
+      sourceEventIds: draft.sourceEventIds,
       localFactSequence: session.facts.length + draftIndex,
       payload: draft.payload,
     } as MatchFact;
