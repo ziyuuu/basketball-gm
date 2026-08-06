@@ -31,9 +31,7 @@ for (const phase of phases) {
   const lines = [];
   for (const file of files) {
     const content = (await readFile(file, 'utf8')).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const hash = createHash('sha256')
-      .update(content)
-      .digest('hex');
+    const hash = createHash('sha256').update(content).digest('hex');
     lines.push(`${hash}  ${relative(directory, file).replace(/\\/g, '/')}`);
   }
   await writeFile(join(directory, 'manifest.sha256'), `${lines.join('\n')}\n`, 'utf8');

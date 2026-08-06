@@ -125,12 +125,12 @@ The v2.10-energy-r2 Candidate `4d35aea` was returned to development with 2 hard 
 
 #### Modified Files in r3
 
-| File                                           | Change                                                    |
-| ---------------------------------------------- | --------------------------------------------------------- |
-| packages/domain/src/match/model-b/behavior-selection.ts | Prettier formatting                               |
-| packages/domain/src/match/model-b/effective-values.ts    | Prettier formatting                               |
-| scripts/generate-evidence-manifest.mjs                  | CRLF→LF normalization, `/` paths                  |
-| evidence/P02/manifest.sha256                             | Regenerated (36 entries, LF-normalized)           |
+| File                                                    | Change                                  |
+| ------------------------------------------------------- | --------------------------------------- |
+| packages/domain/src/match/model-b/behavior-selection.ts | Prettier formatting                     |
+| packages/domain/src/match/model-b/effective-values.ts   | Prettier formatting                     |
+| scripts/generate-evidence-manifest.mjs                  | CRLF→LF normalization, `/` paths        |
+| evidence/P02/manifest.sha256                            | Regenerated (36 entries, LF-normalized) |
 
 ### Status
 
