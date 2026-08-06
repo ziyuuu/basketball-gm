@@ -101,43 +101,50 @@ The v2.10-energy-r1 Candidate `acf9bbb` (evidence commit `aca6307`) was returned
 4. 64-seed scenario re-runs
 5. Gate B performance measurements
 
-### v2.10-energy-r2 Rejection Summary
+### v2.10-energy-r3 Rejection Summary
 
-The v2.10-energy-r2 Candidate `4d35aea` was returned to development with 2 hard blockers:
+The v2.10-energy-r3 Candidate `904dc2e` was returned to development with 5 hard blockers:
 
-1. **CI #113 Prettier failure**: `behavior-selection.ts` and `effective-values.ts` failed `pnpm format:check`, blocking lint/typecheck/tests/build from executing in CI.
-2. **Manifest cross-platform invalidity**: `manifest.sha256` was generated from Windows CRLF working-tree bytes, not canonical Git blob (LF) bytes. Verification succeeded on Windows (36/36) but would produce 0/36 on Linux/CI.
+1. **Active mismatch starters not rejected**: session creation did not validate primaryPosition against slot.
+2. **Forced mismatch penalty bypassed in transition**: transitionIndividualExecution used `assignedPosition: null` and `applyPositionMismatch: false`.
+3. **Behavior energy missing participant role contract**: flat intensity table, no actor/target differentiation.
+4. **Forced mismatch selection not closed**: selection used sort-preference rather than hard primary-first constraint; no real reason codes; no return-to-normal recovery.
+5. **63 focused tests had false coverage**: pre-match fatigue loops didn't modify values; recovery tests only checked constants.
 
-### 2026-08-06 定点实现修复 v2.10-energy-r3
+### 2026-08-06 定点实现修复 v2.10-energy-r4
 
 #### Identity
 
-- **Candidate**: 228ff420ee2bb3bf1a9dbbe54d9850cba10ca416
-- **Tree**: 034c99ceb57492aa14f08fc16fb9eb7dd2bcbd34
-- **Parent**: 4d35aea735348833d314cd63d73b4bd0b0f2baff
+- **Candidate**: 836d531e11f751faacc36d0cf40b55f11ed256bc
+- **Tree**: 037617061f3a4bbbc6d7ef8e822abc4c935aba2d
+- **Parent**: 904dc2e70b3c8cdf2d578e3cee3aa73a0cf33c6d
 - **Branch**: `task/p02-003-headless-model-b`
 - **Draft PR**: [#15](https://github.com/ziyuuu/basketball-gm/pull/15)
 
-#### r3 Fixes
+#### r4 Fixes
 
-1. **Prettier formatting** (`behavior-selection.ts`, `effective-values.ts`): Reformatted to match project Prettier config, resolving CI #113 failure.
-2. **Cross-platform manifest**: `scripts/generate-evidence-manifest.mjs` now normalizes `\r\n` → `\n` before SHA-256 hashing, and uses `/` path separators. Manifest hashes now match canonical Git blob hashes on all platforms.
+1. **Behavior energy participant role contract**: Replaced flat intensity table with per-role `{actor, target}` structure. `addActionTrace` now charges actors and targets separately at their respective intensities.
+2. **Transition forced mismatch**: `transitionIndividualExecution` now computes real `assignedPosition` and applies `applyPositionMismatch: true`.
+3. **Starter primary-position validation**: `makeMatchTeamInputSchema` superRefine rejects MatchInput where any starter's `primaryPosition` does not match their assigned slot.
+4. **Forced mismatch selection, reason codes, return-to-normal**: `selectBestPrimaryOrFallback` enforces hard primary-first constraint; `MODEL_B_FORCED_MISMATCH_REASON_CODES.NO_PRIMARY_CANDIDATE` reason code; `canRestorePrimaryPosition` restores normal rotation when a bench primary becomes available.
+5. **Test coverage**: Fixed pre-match fatigue tests; added real bench recovery test, starter rejection pipeline tests, forced mismatch pipeline tests, and 44-behavior participant role matrix test.
 
-#### Modified Files in r3
+#### Modified Files in r4 (6 files)
 
-| File                                                    | Change                                  |
-| ------------------------------------------------------- | --------------------------------------- |
-| packages/domain/src/match/model-b/behavior-selection.ts | Prettier formatting                     |
-| packages/domain/src/match/model-b/effective-values.ts   | Prettier formatting                     |
-| scripts/generate-evidence-manifest.mjs                  | CRLF→LF normalization, `/` paths        |
-| evidence/P02/manifest.sha256                            | Regenerated (36 entries, LF-normalized) |
+| File | Change |
+|------|--------|
+| packages/domain/src/match/model-b/registries.ts | Per-role energy table, forced mismatch reason codes |
+| packages/domain/src/match/model-b/runner.ts | Transition execution position, participant role energy |
+| packages/domain/src/match/schemas.ts | Starter primary-position validation |
+| packages/domain/src/match/model-b/state-rules.ts | Forced mismatch selection, return-to-normal |
+| tests/p02-003-energy-forced-mismatch.test.ts | Real test coverage (72 tests, +9 new) |
+| tests/helpers/p02-003-fixtures.ts | Fix scrimmage away team position assignment |
 
 ### Status
 
 ```text
-P02-003 v2.10-energy-r3:
+P02-003 v2.10-energy-r4:
 IMPLEMENTED / SELF-VERIFIED
-AWAITING CI CONFIRMATION
 
 INDEPENDENT REVIEW: NOT STARTED
 B8 / GATE B / PR READY / MERGE / P02-004: BLOCKED

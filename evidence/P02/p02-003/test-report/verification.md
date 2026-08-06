@@ -171,32 +171,26 @@ pnpm sim:batch  # 0 failures, 0 replay mismatches
 pnpm evidence:manifest  # 36/36 verified
 ```
 
-## 2026-08-06 定点实现修复 v2.10-energy-r3 Verification
+## 2026-08-06 定点实现修复 v2.10-energy-r4 Verification
 
-### r2 Rejection
+### r3 Rejection
 
-The r2 Candidate `4d35aea` was returned with 2 hard blockers:
+The r3 Candidate `904dc2e` was returned by independent review with 5 runtime contract gaps:
+1. Active mismatch starters not rejected
+2. Forced mismatch penalty bypassed in transition
+3. Behavior energy missing participant role contract
+4. Forced mismatch selection not closed (hard primary-first, reason codes, return-to-normal)
+5. 63 focused tests had false coverage
 
-1. **CI #113 Prettier failure**: `behavior-selection.ts` and `effective-values.ts` failed format check.
-2. **Manifest cross-platform invalidity**: Hashes generated from Windows CRLF bytes, not canonical Git LF bytes.
+### r4 Fixes
 
-### r3 Fixes
+1. **Behavior energy participant role contract**: Per-role `{actor, target}` intensity table, separate actor/target charging in `addActionTrace`
+2. **Transition forced mismatch**: `transitionIndividualExecution` uses real `assignedPosition` and `applyPositionMismatch: true`
+3. **Starter primary-position validation**: `makeMatchTeamInputSchema` superRefine rejects mismatched starters
+4. **Forced mismatch selection**: `selectBestPrimaryOrFallback` with hard primary-first constraint; `FORCED_MISMATCH_NO_PRIMARY` reason code; `canRestorePrimaryPosition` return-to-normal
+5. **Test coverage**: 72 tests (9 new) — real fatigue test, bench recovery, starter rejection, forced mismatch pipeline, 44-behavior participant role matrix
 
-1. **Prettier**: Reformatted `behavior-selection.ts` and `effective-values.ts`.
-2. **Cross-platform manifest**: `scripts/generate-evidence-manifest.mjs` normalizes `\r\n` → `\n` before SHA-256, uses `/` path separators. Manifest hashes now match Git blob hashes on all platforms.
-
-### Test Results (local, pre-CI)
-
-```bash
-npx vitest run tests/p02-003-b1-registries.test.ts                # 17/17 pass
-npx vitest run tests/p02-003-b2-session.test.ts                   # 12/12 pass
-npx vitest run tests/p02-003-b3-clock-rules.test.ts               # (unchanged) pass
-npx vitest run tests/p02-003-b4-behavior-selection.test.ts         # (unchanged) pass
-npx vitest run tests/p02-003-b5-basketball-results.test.ts         # (unchanged) pass
-npx vitest run tests/p02-003-b6-state-rules.test.ts               # 7/7 pass
-npx vitest run tests/p02-003-b7-runner.test.ts                    # 13/13 pass
-npx vitest run tests/p02-003-energy-forced-mismatch.test.ts        # 63/63 pass
-```
+### Test Results
 
 | Suite                 | Pass/Fail   |
 | --------------------- | ----------- |
@@ -207,15 +201,15 @@ npx vitest run tests/p02-003-energy-forced-mismatch.test.ts        # 63/63 pass
 | B5 basketball results | (unchanged) |
 | B6 state rules        | 7/7         |
 | B7 runner             | 13/13       |
-| Energy/mismatch (NEW) | 63/63       |
-| **Total**             | **149/149** |
+| Energy/mismatch       | 72/72       |
+| **Total**             | **158/158** |
 
 ### Verification Commands
 
 ```bash
-npx prettier --check packages/domain/src/match/model-b/behavior-selection.ts  # pass
-npx prettier --check packages/domain/src/match/model-b/effective-values.ts     # pass
-node scripts/generate-evidence-manifest.mjs --phase P02                        # 36 entries, LF-normalized
-node apps/sim-cli/dist/cli.js batch                                            # 0 failures, 0 replay mismatches
-git diff --check                                                               # pass
+npx vitest run tests/p02-003-b7-runner.test.ts                    # 13/13
+npx vitest run tests/p02-003-energy-forced-mismatch.test.ts        # 72/72
+npx vitest run (all 8 P02-003 test files)                          # 158/158
+node apps/sim-cli/dist/cli.js batch                                # 1000/1000, 0 failures, 0 replay mismatches
+node scripts/generate-evidence-manifest.mjs --phase P02            # 36 entries, LF-normalized
 ```
