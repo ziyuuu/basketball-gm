@@ -1,0 +1,430 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  MatchDrawKindSchema,
+  MatchEventTypeSchema,
+  MODEL_B_BEHAVIOR_MATRIX_IDS,
+  MODEL_B_BEHAVIOR_REGISTRY,
+  MODEL_B_DRAW_KINDS,
+  MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY,
+  MODEL_B_DEFENSIVE_DUTY_REGISTRY,
+  MODEL_B_EVENT_TYPES,
+  MODEL_B_EXECUTION_BLEND_REGISTRY,
+  MODEL_B_LEGACY_RULES_CONTENT_HASH,
+  MODEL_B_PARAMETER_REGISTRY,
+  MODEL_B_REGISTRY_VERSION,
+  MODEL_B_RNG_SEMANTIC_REGISTRY,
+  MODEL_B_RULES_VERSION,
+  MODEL_B_RULES_CONTENT_HASH,
+  MODEL_B_SNAPSHOT_PROFILE_REGISTRY,
+  MODEL_B_SCENARIO_REGISTRY,
+  assertModelBRegistryIntegrity,
+  calculateAbilityBlendMilli,
+  calculateAttributionProbabilityMilli,
+  calculateBehaviorExecutionProbabilityMilli,
+  calculateChemistryExecutionModifierMilli,
+  calculateCommittedFatigueIncrementMilli,
+  calculateCreationProbabilityMilli,
+  calculateEffectiveExecutionStages,
+  calculateFatiguePenaltyMilli,
+  calculateFreeThrowProbabilityMilli,
+  calculateLineupChemistryMilli,
+  calculateOffensiveAttemptFactorMilli,
+  calculateOffensiveReboundProbabilityMilli,
+  calculateOpportunityQualityMilli,
+  calculateShotProbabilityMilli,
+  calculateTurnoverProbabilityMilli,
+  calculateTacticalExecutionModifierMilli,
+  calculateTeamCoordinationIndexMilli,
+  normalizeAbsoluteWingspanMilli,
+  normalizeHeightMilli,
+  normalizeWingspanAdvantageMilli,
+  stableSortPlayersById,
+  type ModelBPhysicalPlayerSnapshot,
+  type LegacyMatchPlayerSnapshot,
+} from '../packages/domain/src/match/index.js';
+
+function player(
+  playerId: string,
+  overrides: Partial<LegacyMatchPlayerSnapshot> = {},
+): LegacyMatchPlayerSnapshot {
+  return {
+    playerId,
+    primaryPosition: 'PG',
+    secondaryPosition: 'SG',
+    abilities: {
+      finishing: 50,
+      shooting: 50,
+      ballHandling: 50,
+      playmaking: 50,
+      perimeterDefense: 50,
+      interiorDefense: 50,
+      rebounding: 50,
+      athleticism: 50,
+      stamina: 50,
+      tacticalUnderstanding: 50,
+    },
+    bodyImpact: 50,
+    tendencies: {
+      possessionParticipation: 50,
+      passSelection: 50,
+      shotZones: { perimeter: 34, midRange: 33, inside: 33 },
+      transitionParticipation: 50,
+      defensiveRisk: 50,
+      offensiveRebounding: 50,
+    },
+    archetypeTrait: null,
+    fatigueMilli: 30_000,
+    chemistryMilli: 50_000,
+    ...overrides,
+  };
+}
+
+function physicalPlayer(
+  playerId: string,
+  overrides: Partial<ModelBPhysicalPlayerSnapshot> = {},
+): ModelBPhysicalPlayerSnapshot {
+  return {
+    snapshotVersion: 'P02_MATCH_PLAYER_PHYSICAL_V1',
+    playerId,
+    primaryPosition: 'PG',
+    secondaryPosition: 'SG',
+    abilityProfile: {
+      version: 'P02_CORE_11_V1',
+      values: {
+        finishing: 50,
+        shooting: 50,
+        ballHandling: 50,
+        playmaking: 50,
+        perimeterDefense: 50,
+        interiorDefense: 50,
+        rebounding: 50,
+        athleticism: 50,
+        stamina: 50,
+        tacticalUnderstanding: 50,
+        strength: 50,
+      },
+    },
+    physicalProfile: {
+      version: 'HEIGHT_WINGSPAN_CM_V1',
+      heightCm: 177,
+      wingspanCm: 184,
+    },
+    tendencies: player('legacy-shape').tendencies,
+    archetypeTrait: null,
+    fatigueMilli: 30_000,
+    chemistryMilli: 50_000,
+    ...overrides,
+  };
+}
+
+describe('P02-003 B1 frozen registries', () => {
+  it('machine-checks the unique 44 = 34 selectable + 10 non-selectable registry', () => {
+    expect(assertModelBRegistryIntegrity).not.toThrow();
+    expect(MODEL_B_BEHAVIOR_REGISTRY).toHaveLength(44);
+    expect(new Set(MODEL_B_BEHAVIOR_REGISTRY.map(({ behaviorId }) => behaviorId)).size).toBe(44);
+    expect(MODEL_B_BEHAVIOR_REGISTRY.filter(({ selectable }) => selectable)).toHaveLength(34);
+    expect(MODEL_B_BEHAVIOR_REGISTRY.filter(({ selectable }) => !selectable)).toHaveLength(10);
+    expect(MODEL_B_BEHAVIOR_REGISTRY.map(({ behaviorId }) => behaviorId)).toEqual(
+      MODEL_B_BEHAVIOR_MATRIX_IDS,
+    );
+  });
+
+  it('keeps PASS on its single turnover draw and BOXOUT free of selection/actor draws', () => {
+    for (const behaviorId of ['PASS', 'HPASS', 'CREATIVE_PASS', 'ASTOPP', 'HELDKICK']) {
+      expect(
+        MODEL_B_BEHAVIOR_REGISTRY.find((entry) => entry.behaviorId === behaviorId),
+      ).toMatchObject({
+        classification: 'SELECTABLE_ONE_DRAW',
+        resultDrawKind: 'TURNOVER_OCCURRENCE',
+      });
+    }
+    expect(
+      MODEL_B_BEHAVIOR_REGISTRY.find(({ behaviorId }) => behaviorId === 'BOXOUT'),
+    ).toMatchObject({
+      classification: 'RULE_RESULT',
+      selectable: false,
+      resultDrawKind: null,
+    });
+    expect(MODEL_B_PARAMETER_REGISTRY.offensiveRebound.boxoutExecutionBonusMilli).toBe(4_000);
+  });
+
+  it('transcribes only existing event and drawKind enums', () => {
+    expect(MODEL_B_EVENT_TYPES.map((value) => MatchEventTypeSchema.parse(value))).toEqual(
+      MODEL_B_EVENT_TYPES,
+    );
+    expect(MODEL_B_DRAW_KINDS.map((value) => MatchDrawKindSchema.parse(value))).toEqual(
+      MODEL_B_DRAW_KINDS,
+    );
+    for (const entry of MODEL_B_RNG_SEMANTIC_REGISTRY) {
+      expect(MatchDrawKindSchema.parse(entry.drawKind)).toBe(entry.drawKind);
+      expect(entry.maximum).toBeGreaterThanOrEqual(entry.minimum);
+    }
+  });
+
+  it('pre-registers 64 paired seeds for every B8 scenario and hashes all authority values', () => {
+    expect(MODEL_B_SCENARIO_REGISTRY.scenarios.map(({ scenarioId }) => scenarioId)).toEqual([
+      'S1',
+      'S2',
+      'S3',
+      'S4',
+      'S6',
+      'S7',
+      'S8',
+    ]);
+    for (const scenario of MODEL_B_SCENARIO_REGISTRY.scenarios) {
+      expect(scenario.seeds).toHaveLength(64);
+      expect(new Set(scenario.seeds).size).toBe(64);
+    }
+    expect(MODEL_B_RULES_CONTENT_HASH).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(MODEL_B_REGISTRY_VERSION).toBe('p02-003-model-b-v2.10-energy-r1');
+    expect(MODEL_B_RULES_VERSION).toBe('p02-003-v2.10-energy-r1');
+    expect(MODEL_B_RULES_CONTENT_HASH).not.toBe(MODEL_B_LEGACY_RULES_CONTENT_HASH);
+    expect(MODEL_B_LEGACY_RULES_CONTENT_HASH).toBe(
+      'sha256:55b865f3f28dcdde0aead21d249e44e53d0d76b0106c6d11b7fa686f6c49efc2',
+    );
+  });
+
+  it('registers the Physical profile, defensive duties and defensive-action fact contract', () => {
+    expect(MODEL_B_SNAPSHOT_PROFILE_REGISTRY.physicalSnapshotV1.abilityKeys).toHaveLength(11);
+    expect(MODEL_B_SNAPSHOT_PROFILE_REGISTRY.physicalSnapshotV1.abilityKeys).toContain('strength');
+    expect(MODEL_B_SNAPSHOT_PROFILE_REGISTRY.legacySnapshot.modelBPlayable).toBe(false);
+    expect(MODEL_B_DEFENSIVE_DUTY_REGISTRY.C.blockCandidateModifierMilli).toBe(8_000);
+    expect(MODEL_B_DEFENSIVE_DUTY_REGISTRY.PG.passInterceptionCandidateModifierMilli).toBe(6_000);
+    expect(MODEL_B_DEFENSIVE_ACTION_FACT_REGISTRY.helpd).toMatchObject({
+      successfulDeltaMilli: -6_000,
+      noEffectDeltaMilli: 0,
+      creationFactAllowed: false,
+    });
+  });
+});
+
+describe('P02-003 B1 fixed calculation pipeline', () => {
+  it('applies blend, energy tier, position, trait, chemistry and capped tactics once in order', () => {
+    // 50_000 consumed → floor(50) → band 50 → -15_000 energy tier penalty
+    const subject = player('pipeline', {
+      primaryPosition: 'PG',
+      secondaryPosition: 'SG',
+      archetypeTrait: 'STEADY_HANDLER',
+      fatigueMilli: 50_000,
+    });
+    const stages = calculateEffectiveExecutionStages({
+      player: subject,
+      blend: 'BALL_SECURITY',
+      assignedPosition: 'SG',
+      applyPositionMismatch: true,
+      traitContext: 'BALL_SECURITY',
+      chemistryModifierMilli: 2_000,
+      applyChemistry: true,
+      tacticalModifierMilli: 20_000,
+    });
+    // BALL_SECURITY = ballHandling 500 + playmaking 300 + tacticalUnderstanding 200
+    // All abilities at 50 → 50_000 each. With -15_000 energy penalty: 35_000 each.
+    // Blend = (35*500 + 35*300 + 35*200)/1000 = 35_000.
+    expect(stages).toEqual({
+      abilityBlendMilli: 35_000,
+      fatiguePenaltyMilli: -15_000,
+      afterFatigueMilli: 35_000,
+      positionModifierMilli: -8_000,
+      afterPositionMilli: 27_000,
+      traitModifierMilli: 6_000,
+      afterTraitMilli: 33_000,
+      chemistryModifierMilli: 2_000,
+      afterChemistryMilli: 35_000,
+      tacticalModifierMilli: 6_000,
+      finalExecutionMilli: 41_000,
+    });
+  });
+
+  it('uses exact half-up weighted execution without floating-point authority values', () => {
+    const subject = player('blend', {
+      abilities: {
+        ...player('base').abilities,
+        ballHandling: 51,
+        playmaking: 50,
+        tacticalUnderstanding: 50,
+      },
+    });
+    expect(calculateAbilityBlendMilli(subject, 'BALL_SECURITY')).toBe(50_500);
+    expect(calculateFatiguePenaltyMilli(100_000, 'FULL')).toBe(14_000);
+    expect(calculateFatiguePenaltyMilli(80_000, 'HALF')).toBe(5_000);
+  });
+
+  it('normalizes height and wingspan with the frozen roundHalfUp and clamp rules', () => {
+    expect(normalizeHeightMilli(150)).toBe(0);
+    expect(normalizeHeightMilli(177)).toBe(49_091);
+    expect(normalizeHeightMilli(220)).toBe(100_000);
+    expect(normalizeAbsoluteWingspanMilli(184)).toBe(48_571);
+    expect(normalizeAbsoluteWingspanMilli(235)).toBe(100_000);
+    expect(normalizeWingspanAdvantageMilli(177, 184)).toBe(56_667);
+    expect(normalizeWingspanAdvantageMilli(220, 140)).toBe(0);
+  });
+
+  it('uses each Physical factor once and locks the Erratum 01 rim-protection term', () => {
+    for (const terms of Object.values(MODEL_B_EXECUTION_BLEND_REGISTRY)) {
+      expect(terms.reduce((total, [, weight]) => total + weight, 0)).toBe(1_000);
+      expect(new Set(terms.map(([attribute]) => attribute)).size).toBe(terms.length);
+    }
+    expect(MODEL_B_EXECUTION_BLEND_REGISTRY.INSIDE_SHOT_PROTECTION[0]).toEqual([
+      'interiorDefense',
+      450,
+    ]);
+    expect(MODEL_B_EXECUTION_BLEND_REGISTRY.INSIDE_SHOT_PROTECTION).not.toContainEqual([
+      'finishing',
+      450,
+    ]);
+
+    const baseline = physicalPlayer('rim-baseline');
+    const higherInteriorDefense = physicalPlayer('rim-defense', {
+      abilityProfile: {
+        ...baseline.abilityProfile,
+        values: { ...baseline.abilityProfile.values, interiorDefense: 90 },
+      },
+    });
+    const higherFinishing = physicalPlayer('rim-finishing', {
+      abilityProfile: {
+        ...baseline.abilityProfile,
+        values: { ...baseline.abilityProfile.values, finishing: 90 },
+      },
+    });
+    expect(
+      calculateAbilityBlendMilli(higherInteriorDefense, 'INSIDE_SHOT_PROTECTION'),
+    ).toBeGreaterThan(calculateAbilityBlendMilli(baseline, 'INSIDE_SHOT_PROTECTION'));
+    expect(calculateAbilityBlendMilli(higherFinishing, 'INSIDE_SHOT_PROTECTION')).toBe(
+      calculateAbilityBlendMilli(baseline, 'INSIDE_SHOT_PROTECTION'),
+    );
+  });
+
+  it('keeps fatigue accumulation and tactical benefits/costs explicit', () => {
+    const tactics = {
+      pace: 'FAST' as const,
+      offensiveFocus: 'PERIMETER' as const,
+      defensiveFocus: 'PRESSURE' as const,
+    };
+    expect(
+      calculateCommittedFatigueIncrementMilli({
+        matchKind: 'OFFICIAL',
+        seconds: 600,
+        stamina: 50,
+        tactics,
+      }),
+    ).toBe(3_060);
+    expect(calculateOffensiveAttemptFactorMilli(tactics, 'PERIMETER')).toBe(1_250);
+    expect(calculateOffensiveAttemptFactorMilli(tactics, 'INTERIOR')).toBe(850);
+    expect(calculateTacticalExecutionModifierMilli(tactics, 'DEFENSIVE_PRESSURE')).toBe(4_000);
+    expect(calculateTacticalExecutionModifierMilli(tactics, 'OPPONENT_INSIDE_OPPORTUNITY')).toBe(
+      3_000,
+    );
+  });
+
+  it('weights chemistry roles by the highest role only and supports actual 2-player lineups', () => {
+    const organizer = player('organizer', { chemistryMilli: 80_000 });
+    const teammate = player('teammate', { chemistryMilli: 40_000 });
+    const chemistry = calculateLineupChemistryMilli([organizer, teammate], {
+      primaryOrganizer: organizer.playerId,
+      offensiveHub: organizer.playerId,
+      defensiveCaptain: teammate.playerId,
+    });
+    expect(chemistry).toBe(61_277);
+    expect(calculateChemistryExecutionModifierMilli(chemistry)).toBe(1_353);
+    expect(calculateChemistryExecutionModifierMilli(0)).toBe(-6_000);
+    expect(calculateChemistryExecutionModifierMilli(100_000)).toBe(6_000);
+  });
+
+  it('sorts candidate IDs by UTF-16 code-unit order independent of input order', () => {
+    const values = [player('😀'), player('z'), player('中'), player('a')];
+    expect(stableSortPlayersById(values).map(({ playerId }) => playerId)).toEqual([
+      'a',
+      'z',
+      '中',
+      '😀',
+    ]);
+    expect(stableSortPlayersById([...values].reverse()).map(({ playerId }) => playerId)).toEqual([
+      'a',
+      'z',
+      '中',
+      '😀',
+    ]);
+  });
+
+  it('builds team coordination and opportunity quality with per-event and net caps', () => {
+    expect(calculateTeamCoordinationIndexMilli(6_000)).toBe(80_000);
+    expect(calculateTeamCoordinationIndexMilli(-6_000)).toBe(20_000);
+    expect(
+      calculateOpportunityQualityMilli({
+        creationExecutionMilli: 60_000,
+        teamCoordinationMilli: 50_000,
+        spacingMilli: 50_000,
+        helpEnvironmentMilli: 50_000,
+        tacticalOpportunityModifierMilli: 10_000,
+        possessionDeltasMilli: [10_000, 10_000],
+      }),
+    ).toBe(65_500);
+  });
+});
+
+describe('P02-003 B1 probability clamps and monotonicity', () => {
+  it('keeps stronger offense monotonic and stronger defense monotonic in the opposite direction', () => {
+    expect(
+      calculateShotProbabilityMilli({
+        zone: 'THREE_POINT',
+        offensiveExecutionMilli: 70_000,
+        defensiveExecutionMilli: 40_000,
+        opportunityQualityMilli: 50_000,
+      }),
+    ).toBeGreaterThan(
+      calculateShotProbabilityMilli({
+        zone: 'THREE_POINT',
+        offensiveExecutionMilli: 40_000,
+        defensiveExecutionMilli: 40_000,
+        opportunityQualityMilli: 50_000,
+      }),
+    );
+    expect(calculateCreationProbabilityMilli('HIGH_POST_CREATION', 60_000, 80_000)).toBeLessThan(
+      calculateCreationProbabilityMilli('HIGH_POST_CREATION', 60_000, 20_000),
+    );
+    expect(calculateOffensiveReboundProbabilityMilli(80_000, 20_000)).toBeGreaterThan(
+      calculateOffensiveReboundProbabilityMilli(20_000, 80_000),
+    );
+  });
+
+  it('applies explicit probability clamps and exact half-up boundaries', () => {
+    expect(
+      calculateShotProbabilityMilli({
+        zone: 'INSIDE',
+        offensiveExecutionMilli: 100_000,
+        defensiveExecutionMilli: -100_000,
+        opportunityQualityMilli: 100_000,
+      }),
+    ).toBe(800);
+    expect(calculateFreeThrowProbabilityMilli(100_000, 0)).toBe(900);
+    expect(calculateFreeThrowProbabilityMilli(0, 14_000)).toBe(572);
+    expect(calculateAttributionProbabilityMilli('ASSIST', 50_500, 50_000)).toBe(551);
+  });
+
+  it('separates tendency-free execution from bounded turnover risk', () => {
+    const lowRisk = calculateTurnoverProbabilityMilli({
+      defensivePressureMilli: 40_000,
+      ballSecurityMilli: 70_000,
+      actionPressureMilli: -3_000,
+      pace: 'SLOW',
+      teamExecutionModifierMilli: 6_000,
+    });
+    const highRisk = calculateTurnoverProbabilityMilli({
+      defensivePressureMilli: 70_000,
+      ballSecurityMilli: 40_000,
+      actionPressureMilli: 4_000,
+      pace: 'FAST',
+      teamExecutionModifierMilli: -6_000,
+    });
+    expect(lowRisk).toBe(60);
+    expect(highRisk).toBeGreaterThan(lowRisk);
+    expect(highRisk).toBeLessThanOrEqual(250);
+  });
+
+  it('uses the frozen one-draw behavior execution formulas', () => {
+    expect(calculateBehaviorExecutionProbabilityMilli('SCREEN', 60_000, 50_000)).toBe(520);
+    expect(calculateBehaviorExecutionProbabilityMilli('DOUBLET', 0, 100_000)).toBe(150);
+    expect(calculateBehaviorExecutionProbabilityMilli('HELPD', 100_000, 0)).toBe(700);
+  });
+});

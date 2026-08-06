@@ -134,6 +134,10 @@ export const MatchAbilitiesSchema = z
   })
   .strict();
 
+export const PhysicalMatchAbilitiesV1Schema = MatchAbilitiesSchema.extend({
+  strength: z.number().int().min(0).max(100),
+}).strict();
+
 export const MatchTendenciesSchema = z
   .object({
     possessionParticipation: z.number().int().min(0).max(100),
@@ -165,7 +169,7 @@ export const ArchetypeTraitSchema = z.enum([
   'REBOUND_INSTINCT',
 ]);
 
-export const MatchPlayerSnapshotSchema = z
+export const LegacyMatchPlayerSnapshotSchema = z
   .object({
     playerId: NonEmptyStringSchema,
     primaryPosition: PositionSchema,
@@ -187,6 +191,53 @@ export const MatchPlayerSnapshotSchema = z
       );
     }
   });
+
+export const PhysicalMatchPlayerSnapshotV1Schema = z
+  .object({
+    snapshotVersion: z.literal('P02_MATCH_PLAYER_PHYSICAL_V1'),
+    playerId: NonEmptyStringSchema,
+    primaryPosition: PositionSchema,
+    secondaryPosition: PositionSchema.nullable(),
+    abilityProfile: z
+      .object({
+        version: z.literal('P02_CORE_11_V1'),
+        values: PhysicalMatchAbilitiesV1Schema,
+      })
+      .strict(),
+    physicalProfile: z
+      .object({
+        version: z.literal('HEIGHT_WINGSPAN_CM_V1'),
+        heightCm: z.number().int().min(140).max(220),
+        wingspanCm: z.number().int().min(140).max(235),
+      })
+      .strict(),
+    tendencies: MatchTendenciesSchema,
+    archetypeTrait: ArchetypeTraitSchema.nullable(),
+    fatigueMilli: MilliSchema,
+    chemistryMilli: MilliSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.secondaryPosition === value.primaryPosition) {
+      addIssue(
+        context,
+        ['secondaryPosition'],
+        'Secondary position must differ from primary position.',
+      );
+    }
+  });
+
+export const MatchPlayerSnapshotSchema = z.union([
+  LegacyMatchPlayerSnapshotSchema,
+  PhysicalMatchPlayerSnapshotV1Schema,
+]);
+
+export type LegacyMatchPlayerSnapshot = z.infer<typeof LegacyMatchPlayerSnapshotSchema>;
+export type PhysicalMatchPlayerSnapshotV1 = z.infer<typeof PhysicalMatchPlayerSnapshotV1Schema>;
+export type MatchPlayerSnapshotValue = z.infer<typeof MatchPlayerSnapshotSchema>;
+
+/** All five lineup slots in canonical order. */
+export const POSITION_SLOTS = ['PG', 'SG', 'SF', 'PF', 'C'] as const;
 
 export const StartingLineupSchema = z
   .object({
@@ -253,6 +304,18 @@ function makeMatchTeamInputSchema(expectedRosterSize: number) {
             context,
             ['startingLineup', slot],
             'Starter must be included in the registered roster.',
+          );
+        }
+      }
+      // v2.10: Reject active mismatch starters — each starter must play their primary position
+      for (const slot of POSITION_SLOTS) {
+        const starterId = value.startingLineup[slot];
+        const starter = value.players.find((p) => p.playerId === starterId);
+        if (starter !== undefined && starter.primaryPosition !== slot) {
+          addIssue(
+            context,
+            ['startingLineup', slot],
+            `Starter ${starterId} has primary position ${starter.primaryPosition} but is assigned to the ${slot} slot. Active mismatch starters are rejected.`,
           );
         }
       }
@@ -842,6 +905,7 @@ export const MatchEventPayloadSchema = z.discriminatedUnion('type', [
       inPlayerId: NonEmptyStringSchema,
       transcriptEntryHash: IdentityHashSchema.nullable(),
       forced: z.boolean(),
+      reasonCode: z.string().nullable(),
     })
     .strict(),
   z.object({ type: z.literal('EFFECT_APPLIED'), effectKey: NonEmptyStringSchema }).strict(),

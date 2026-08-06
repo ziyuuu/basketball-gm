@@ -3,3 +3,5 @@ dist
 coverage
 pnpm-lock.yaml
 evidence/**/manifest.sha256
+docs/design/P02-003/v2.9-final/
+docs/design/P02-003/v2.9-r1-final/

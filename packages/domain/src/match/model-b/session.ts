@@ -1,0 +1,846 @@
+import type { CanonicalV2Value } from '../../core/canonical-v2.js';
+import { compareUtf16CodeUnits } from '../../core/canonical-v2.js';
+import { clampFixedPoint } from '../../core/index.js';
+import {
+  GENESIS_MATCH_ANCHOR_HASH,
+  GENESIS_MATCH_TRANSCRIPT_HASH,
+  MatchAnchorSchema,
+  MatchEventSchema,
+  MatchFactSchema,
+  MatchInputSchema,
+  PhysicalMatchPlayerSnapshotV1Schema,
+  MatchTranscriptEntrySchema,
+  MatchTranscriptSchema,
+  deriveEffectiveFragmentHash,
+  deriveEventId,
+  deriveFactId,
+  deriveMatchAnchorHash,
+  deriveMatchEventHash,
+  deriveMatchFactHash,
+  deriveTranscriptEntryHash,
+  deriveTranscriptHash,
+  type MatchAnchor,
+  type MatchEvent,
+  type MatchFact,
+  type MatchInput,
+  type MatchTranscript,
+  type MatchTranscriptEntry,
+} from '../schemas.js';
+import { keyedDrawUnitInterval } from '../keyed-rng.js';
+import { decrementEffectsAfterCommittedPossession } from '../effects.js';
+import {
+  assertModelBBasketballInvariants,
+  assertModelBTransitionBasketballCausality,
+  assertModelBTransitionBasketballFacts,
+} from './basketball-invariants.js';
+import { createEmptyModelBBoxScore, reduceModelBEventPayloads } from './box-score.js';
+import {
+  calculateLineupChemistryMilli,
+  stableSortPlayersById,
+  type MatchPlayerSnapshot,
+} from './effective-values.js';
+import {
+  assertModelBEffectApplication,
+  assertModelBTransitionPlayerEligibility,
+  recalculateModelBEligibleLineupState,
+  reduceModelBCommittedEnergy,
+} from './state-rules.js';
+import {
+  MODEL_B_PARAMETER_REGISTRY,
+  MODEL_B_RULES_CONTENT_HASH,
+  MODEL_B_RULES_VERSION,
+} from './registries.js';
+
+type PhysicalizeMatchInput<T extends MatchInput> = T extends MatchInput
+  ? Omit<T, 'homeTeam' | 'awayTeam'> & {
+      homeTeam: Omit<T['homeTeam'], 'players'> & { players: MatchPlayerSnapshot[] };
+      awayTeam: Omit<T['awayTeam'], 'players'> & { players: MatchPlayerSnapshot[] };
+    }
+  : never;
+
+export type ModelBMatchInput = PhysicalizeMatchInput<MatchInput>;
+
+export type ModelBSession = Readonly<{
+  input: ModelBMatchInput;
+  anchors: readonly MatchAnchor[];
+  events: readonly MatchEvent[];
+  facts: readonly MatchFact[];
+  transcriptEntries: readonly MatchTranscriptEntry[];
+}>;
+
+export type ModelBFactDraft = Readonly<{
+  factKind: MatchFact['factKind'];
+  sourceEventIndexes: readonly number[];
+  intraTypeOrdinal?: number;
+  payload: CanonicalV2Value;
+}>;
+
+export type ModelBTransitionDraft = Readonly<{
+  eventPayloads: readonly MatchEvent['payload'][];
+  facts?: readonly ModelBFactDraft[];
+  nextPossession?: MatchAnchor['possession'];
+  nextPeriod?: number;
+  status?: MatchAnchor['status'];
+  controlBoundaryKind?: NonNullable<MatchAnchor['controlBoundary']>['kind'];
+  effectiveFragment?: MatchAnchor['effectiveFragment'];
+  pendingSubstitutionEntryHashes?: readonly string[];
+  /** Per-player additional energy cost from behavior participation in this segment. */
+  behaviorEnergyDeltaByPlayer?: Readonly<Record<string, number>>;
+}>;
+
+export type ModelBAutomatedDecisionDraft =
+  | Readonly<{
+      actor: 'ASSISTANT' | 'OPPONENT';
+      policyId: string;
+      policyInputHash: string;
+      effectiveFragment: MatchAnchor['effectiveFragment'];
+    }>
+  | Readonly<{
+      actor: 'RULES';
+      ruleId: string;
+      ruleInputHash: string;
+      effectiveFragment: MatchAnchor['effectiveFragment'];
+    }>;
+
+function deepFreeze<T>(value: T): Readonly<T> {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value as Readonly<T>;
+}
+
+function freezeSession(input: {
+  input: ModelBMatchInput;
+  anchors: MatchAnchor[];
+  events: MatchEvent[];
+  facts: MatchFact[];
+  transcriptEntries: MatchTranscriptEntry[];
+}): ModelBSession {
+  return Object.freeze({
+    input: input.input,
+    anchors: Object.freeze(input.anchors),
+    events: Object.freeze(input.events),
+    facts: Object.freeze(input.facts),
+    transcriptEntries: Object.freeze(input.transcriptEntries),
+  });
+}
+
+function sidePlayers(
+  input: ModelBMatchInput,
+  side: 'HOME' | 'AWAY',
+): readonly MatchPlayerSnapshot[] {
+  return side === 'HOME' ? input.homeTeam.players : input.awayTeam.players;
+}
+
+function lineupPlayers(
+  input: ModelBMatchInput,
+  side: 'HOME' | 'AWAY',
+  lineup: MatchAnchor['lineups']['home'],
+): MatchPlayerSnapshot[] {
+  const playerById = new Map(sidePlayers(input, side).map((player) => [player.playerId, player]));
+  return Object.values(lineup).map((playerId) => {
+    const player = playerById.get(playerId);
+    if (player === undefined)
+      throw new Error(`Lineup player ${playerId} is not registered for ${side}.`);
+    return player;
+  });
+}
+
+function makeAnchor(input: Omit<MatchAnchor, 'anchorHash' | 'effectiveFragmentHash'>): MatchAnchor {
+  const withFragmentHash = {
+    ...input,
+    effectiveFragmentHash: deriveEffectiveFragmentHash({
+      matchId: input.matchId,
+      previousAnchorHash: input.previousAnchorHash,
+      controlBoundary: input.controlBoundary,
+      fragment: input.effectiveFragment,
+    }),
+    anchorHash: GENESIS_MATCH_ANCHOR_HASH,
+  } as MatchAnchor;
+  const anchor = {
+    ...withFragmentHash,
+    anchorHash: deriveMatchAnchorHash(withFragmentHash),
+  };
+  return deepFreeze(MatchAnchorSchema.parse(anchor));
+}
+
+export function createModelBSession(rawInput: ModelBMatchInput): ModelBSession {
+  const input = MatchInputSchema.parse(rawInput);
+  if (input.gameIdentity.rulesVersion !== MODEL_B_RULES_VERSION) {
+    throw new Error(`Model B input requires the R1 rulesVersion ${MODEL_B_RULES_VERSION}.`);
+  }
+  if (input.gameIdentity.contentHashes.modelB !== MODEL_B_RULES_CONTENT_HASH) {
+    throw new Error(
+      `Model B input requires the R1 modelB content hash ${MODEL_B_RULES_CONTENT_HASH}.`,
+    );
+  }
+  for (const [side, players] of [
+    ['HOME', input.homeTeam.players],
+    ['AWAY', input.awayTeam.players],
+  ] as const) {
+    for (const player of players) {
+      if (!PhysicalMatchPlayerSnapshotV1Schema.safeParse(player).success) {
+        throw new Error(
+          `Model B ${side} input requires the P02_MATCH_PLAYER_PHYSICAL_V1 snapshot variant.`,
+        );
+      }
+    }
+  }
+  const physicalInput = input as ModelBMatchInput;
+  const openingSide =
+    keyedDrawUnitInterval({
+      matchSeed: physicalInput.matchSeed,
+      period: 1,
+      possessionIndex: 0,
+      segmentIndex: 0,
+      drawKind: 'BALL_HANDLER',
+      localIndex: 0,
+    }) < 0.5
+      ? 'HOME'
+      : 'AWAY';
+  const lineups = {
+    home: { ...physicalInput.homeTeam.startingLineup },
+    away: { ...physicalInput.awayTeam.startingLineup },
+  };
+  const roles = {
+    home: { ...physicalInput.homeTeam.roles },
+    away: { ...physicalInput.awayTeam.roles },
+  };
+  const tactics = {
+    home: { ...physicalInput.homeTeam.tactics },
+    away: { ...physicalInput.awayTeam.tactics },
+  };
+  const controlBoundary = {
+    kind: 'MATCH_START' as const,
+    period: 1,
+    possessionIndex: 0,
+    segmentIndex: 0,
+  };
+  const effectiveFragment = { tactics, roles, lineups, effects: [] };
+  // v2.10: All players start at 0 energy consumed (100 remaining).
+  // Pre-match fatigueMilli on the snapshot is compat-only and does not affect opening energy.
+  const fatigueMilliByPlayer = Object.fromEntries(
+    stableSortPlayersById([
+      ...physicalInput.homeTeam.players,
+      ...physicalInput.awayTeam.players,
+    ]).map((player) => [player.playerId, 0]),
+  );
+  const anchor = makeAnchor({
+    matchId: physicalInput.matchId,
+    previousAnchorHash: GENESIS_MATCH_ANCHOR_HASH,
+    period: 1,
+    periodClockSeconds: physicalInput.rules.regularPeriodSeconds,
+    score: { home: 0, away: 0 },
+    possession: { side: openingSide, possessionIndex: 0, segmentIndex: 0 },
+    eventCursor: 0,
+    transcriptCursor: 0,
+    localRevision: 0,
+    lineups,
+    roles,
+    pendingSubstitutionEntryHashes: [],
+    fatigueMilliByPlayer,
+    chemistryWeightedMilli: {
+      home: calculateLineupChemistryMilli(
+        lineupPlayers(physicalInput, 'HOME', lineups.home),
+        roles.home,
+      ),
+      away: calculateLineupChemistryMilli(
+        lineupPlayers(physicalInput, 'AWAY', lineups.away),
+        roles.away,
+      ),
+    },
+    boxScore: createEmptyModelBBoxScore(physicalInput),
+    effectiveFragment,
+    controlBoundary,
+    status: 'IN_PROGRESS',
+  });
+  return freezeSession({
+    input: deepFreeze(physicalInput),
+    anchors: [anchor],
+    events: [],
+    facts: [],
+    transcriptEntries: [],
+  });
+}
+
+export function buildModelBTranscript(session: ModelBSession): MatchTranscript {
+  const transcript = {
+    matchId: session.input.matchId,
+    genesisAnchorHash: session.anchors[0]?.anchorHash ?? GENESIS_MATCH_ANCHOR_HASH,
+    entries: [...session.transcriptEntries],
+    transcriptHash: GENESIS_MATCH_TRANSCRIPT_HASH,
+  } as MatchTranscript;
+  transcript.transcriptHash = deriveTranscriptHash(transcript);
+  return MatchTranscriptSchema.parse(transcript);
+}
+
+export function predictModelBEventId(
+  session: ModelBSession,
+  transitionEventOffset: number,
+  eventType: MatchEvent['eventType'],
+): string {
+  if (!Number.isSafeInteger(transitionEventOffset) || transitionEventOffset < 0) {
+    throw new Error('A predicted transition event offset must be a non-negative safe integer.');
+  }
+  const anchor = session.anchors.at(-1);
+  if (anchor === undefined) throw new Error('A Model B session requires a current Anchor.');
+  const lastEvent = session.events.at(-1);
+  const existingInSegment =
+    lastEvent !== undefined &&
+    lastEvent.period === anchor.period &&
+    lastEvent.possessionIndex === anchor.possession.possessionIndex &&
+    lastEvent.segmentIndex === anchor.possession.segmentIndex
+      ? lastEvent.localEventSequence + 1
+      : 0;
+  return deriveEventId({
+    matchId: session.input.matchId,
+    period: anchor.period,
+    possessionIndex: anchor.possession.possessionIndex,
+    segmentIndex: anchor.possession.segmentIndex,
+    localEventSequence: existingInSegment + transitionEventOffset,
+    eventType,
+  });
+}
+
+function assertBoundaryMatchesAnchor(anchor: MatchAnchor): void {
+  const boundary = anchor.controlBoundary;
+  if (
+    boundary !== null &&
+    (boundary.period !== anchor.period ||
+      boundary.possessionIndex !== anchor.possession.possessionIndex ||
+      boundary.segmentIndex !== anchor.possession.segmentIndex)
+  ) {
+    throw new Error(
+      'A control boundary must use its Anchor period/possession/segment coordinates.',
+    );
+  }
+}
+
+function requireExactIds(
+  actual: readonly string[],
+  expected: ReadonlySet<string>,
+  label: string,
+): void {
+  if (actual.length !== expected.size || actual.some((value) => !expected.has(value))) {
+    throw new Error(`${label} must contain exactly the registered participant IDs.`);
+  }
+}
+
+export function assertModelBSessionInvariants(session: ModelBSession): void {
+  if (session.anchors.length === 0) throw new Error('A Model B session requires a genesis Anchor.');
+  const homeIds = new Set(session.input.homeTeam.players.map(({ playerId }) => playerId));
+  const awayIds = new Set(session.input.awayTeam.players.map(({ playerId }) => playerId));
+  const allIds = new Set([...homeIds, ...awayIds]);
+  const anchorIndexByHash = new Map<string, number>();
+  for (const [index, anchor] of session.anchors.entries()) {
+    MatchAnchorSchema.parse(anchor);
+    assertBoundaryMatchesAnchor(anchor);
+    const expectedPrevious =
+      index === 0 ? GENESIS_MATCH_ANCHOR_HASH : session.anchors[index - 1]?.anchorHash;
+    if (anchor.previousAnchorHash !== expectedPrevious) {
+      throw new Error('Model B Anchor chain is not contiguous.');
+    }
+    if (anchorIndexByHash.has(anchor.anchorHash)) {
+      throw new Error('Model B Anchor hashes must be unique.');
+    }
+    anchorIndexByHash.set(anchor.anchorHash, index);
+    requireExactIds(
+      anchor.boxScore.home.players.map(({ playerId }) => playerId),
+      homeIds,
+      'Home box score',
+    );
+    requireExactIds(
+      anchor.boxScore.away.players.map(({ playerId }) => playerId),
+      awayIds,
+      'Away box score',
+    );
+    requireExactIds(Object.keys(anchor.fatigueMilliByPlayer), allIds, 'Fatigue map');
+    if (Object.values(anchor.lineups.home).some((playerId) => !homeIds.has(playerId))) {
+      throw new Error('Home lineup contains a player outside the immutable MatchInput.');
+    }
+    if (Object.values(anchor.lineups.away).some((playerId) => !awayIds.has(playerId))) {
+      throw new Error('Away lineup contains a player outside the immutable MatchInput.');
+    }
+  }
+  const eventsByTransition = new Map<string, MatchEvent[]>();
+  const nextLocalSequence = new Map<string, number>();
+  for (const [index, event] of session.events.entries()) {
+    MatchEventSchema.parse(event);
+    if (event.cursor !== index) throw new Error('Model B event cursor is not dense.');
+    const previousIndex = anchorIndexByHash.get(event.previousAnchorHash);
+    const nextIndex = anchorIndexByHash.get(event.nextAnchorHash);
+    if (previousIndex === undefined || nextIndex !== previousIndex + 1) {
+      throw new Error('A Model B event must bind one adjacent Anchor transition.');
+    }
+    const previousAnchor = session.anchors[previousIndex]!;
+    const nextAnchor = session.anchors[nextIndex]!;
+    if (
+      event.period !== previousAnchor.period ||
+      event.possessionIndex !== previousAnchor.possession.possessionIndex ||
+      event.segmentIndex !== previousAnchor.possession.segmentIndex
+    ) {
+      throw new Error('A Model B event coordinate must equal its previous Anchor coordinate.');
+    }
+    if (event.cursor < previousAnchor.eventCursor || event.cursor >= nextAnchor.eventCursor) {
+      throw new Error('A Model B event cursor must lie inside its adjacent Anchor cursor range.');
+    }
+    const segmentKey = `${event.period}:${event.possessionIndex}:${event.segmentIndex}`;
+    const expectedLocalSequence = nextLocalSequence.get(segmentKey) ?? 0;
+    if (event.localEventSequence !== expectedLocalSequence) {
+      throw new Error('Model B local event sequence must be dense within a segment.');
+    }
+    nextLocalSequence.set(segmentKey, expectedLocalSequence + 1);
+    const transitionKey = `${event.previousAnchorHash}:${event.nextAnchorHash}`;
+    const transitionEvents = eventsByTransition.get(transitionKey) ?? [];
+    transitionEvents.push(event);
+    eventsByTransition.set(transitionKey, transitionEvents);
+  }
+  for (let index = 0; index < session.anchors.length - 1; index += 1) {
+    const previousAnchor = session.anchors[index]!;
+    const nextAnchor = session.anchors[index + 1]!;
+    const transitionEvents =
+      eventsByTransition.get(`${previousAnchor.anchorHash}:${nextAnchor.anchorHash}`) ?? [];
+    if (transitionEvents.length !== nextAnchor.eventCursor - previousAnchor.eventCursor) {
+      throw new Error('Adjacent Model B Anchor cursors must equal their transition event count.');
+    }
+    for (const [offset, event] of transitionEvents.entries()) {
+      if (event.cursor !== previousAnchor.eventCursor + offset) {
+        throw new Error('A Model B Anchor transition must densely cover its cursor range.');
+      }
+    }
+  }
+  const eventIds = new Set(session.events.map(({ eventId }) => eventId));
+  for (const fact of session.facts) {
+    MatchFactSchema.parse(fact);
+    if (fact.sourceEventIds.some((eventId) => !eventIds.has(eventId))) {
+      throw new Error('Model B fact references an event outside this session.');
+    }
+  }
+  const finalAnchor = session.anchors.at(-1)!;
+  if (
+    finalAnchor.eventCursor !== session.events.length ||
+    finalAnchor.transcriptCursor !== session.transcriptEntries.length
+  ) {
+    throw new Error('Model B final Anchor cursors do not match committed arrays.');
+  }
+  const transcript = buildModelBTranscript(session);
+  for (const entry of transcript.entries) {
+    const previousIndex = anchorIndexByHash.get(entry.previousAnchorHash);
+    const nextIndex = anchorIndexByHash.get(entry.nextAnchorHash);
+    if (previousIndex === undefined || nextIndex !== previousIndex + 1) {
+      throw new Error('A Model B transcript entry must bind one adjacent Anchor transition.');
+    }
+    const previousAnchor = session.anchors[previousIndex]!;
+    const nextAnchor = session.anchors[nextIndex]!;
+    if (
+      previousAnchor.localRevision !== entry.localRevisionBefore ||
+      nextAnchor.localRevision !== entry.localRevisionAfter ||
+      nextAnchor.transcriptCursor !== previousAnchor.transcriptCursor + 1 ||
+      nextAnchor.effectiveFragmentHash !== entry.effectiveFragmentHash
+    ) {
+      throw new Error('A Model B transcript entry does not match its adjacent Anchor identities.');
+    }
+  }
+  assertModelBBasketballInvariants(session);
+}
+
+function assertModelBSessionTail(session: ModelBSession): void {
+  const anchor = session.anchors.at(-1);
+  if (anchor === undefined) throw new Error('A Model B session requires a current Anchor.');
+  MatchAnchorSchema.parse(anchor);
+  assertBoundaryMatchesAnchor(anchor);
+  if (
+    anchor.eventCursor !== session.events.length ||
+    anchor.transcriptCursor !== session.transcriptEntries.length
+  ) {
+    throw new Error('Model B current Anchor cursors do not match committed arrays.');
+  }
+  if (session.events.at(-1)?.cursor !== session.events.length - 1 && session.events.length > 0) {
+    throw new Error('Model B event tail cursor is not dense.');
+  }
+}
+
+function buildTransitionEvent(
+  previousAnchor: MatchAnchor,
+  nextAnchorHash: string,
+  cursor: number,
+  localEventSequence: number,
+  payload: MatchEvent['payload'],
+): MatchEvent {
+  const event = {
+    matchId: previousAnchor.matchId,
+    eventId: GENESIS_MATCH_ANCHOR_HASH,
+    eventHash: GENESIS_MATCH_ANCHOR_HASH,
+    cursor,
+    period: previousAnchor.period,
+    possessionIndex: previousAnchor.possession.possessionIndex,
+    segmentIndex: previousAnchor.possession.segmentIndex,
+    localEventSequence,
+    eventType: payload.type,
+    previousAnchorHash: previousAnchor.anchorHash,
+    nextAnchorHash,
+    payload,
+  } as MatchEvent;
+  event.eventId = deriveEventId(event);
+  event.eventHash = deriveMatchEventHash(event);
+  return deepFreeze(MatchEventSchema.parse(event));
+}
+
+function buildTransitionFacts(
+  session: ModelBSession,
+  transitionEvents: readonly MatchEvent[],
+  drafts: readonly ModelBFactDraft[],
+): MatchFact[] {
+  const subtypeRank = (payload: CanonicalV2Value): number => {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return 9;
+    const value = payload as Record<string, unknown>;
+    if (value.type === 'POSSESSION_HANDLER') return value.reason === 'PASS_RECEIVER' ? 6 : 0;
+    if (value.type === 'ACTION_TRACE') return 1;
+    if (value.type === 'PASS') return 2;
+    if (value.type === 'CREATION') return 3;
+    if (value.type === 'DEFENSIVE_ACTION') return 4;
+    if (value.type === 'TRANSITION_CONTEXT') return 5;
+    if (value.type === 'SHOT_CLOCK_VIOLATION') return 7;
+    if (value.type === 'TEAM_REBOUND') return 8;
+    return 9;
+  };
+  const intraTypeOrdinal = (draft: ModelBFactDraft): number => {
+    if (draft.intraTypeOrdinal !== undefined) return draft.intraTypeOrdinal;
+    if (
+      draft.payload === null ||
+      typeof draft.payload !== 'object' ||
+      Array.isArray(draft.payload)
+    ) {
+      return 0;
+    }
+    const payload = draft.payload as Record<string, unknown>;
+    const ordinal =
+      payload.handlerSequence ?? payload.behaviorSelectionOrdinal ?? payload.sequence ?? 0;
+    if (!Number.isSafeInteger(ordinal) || (ordinal as number) < 0) {
+      throw new Error('A Model B Fact intra-type ordinal must be a non-negative safe integer.');
+    }
+    return ordinal as number;
+  };
+  const resolved = drafts.map((draft) => {
+    const sourceEventIds = [...new Set(draft.sourceEventIndexes)].map((eventIndex) => {
+      const event = transitionEvents[eventIndex];
+      if (event === undefined) throw new Error(`Fact source event index ${eventIndex} is invalid.`);
+      return event.eventId;
+    });
+    sourceEventIds.sort(compareUtf16CodeUnits);
+    if (sourceEventIds.length === 0)
+      throw new Error('A Model B fact requires at least one source event.');
+    let payload = draft.payload;
+    if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+      const record = payload as Record<string, CanonicalV2Value>;
+      if (record.type === 'ACTION_TRACE' && Array.isArray(record.resultEventDraftIndexes)) {
+        const resultEventIds = record.resultEventDraftIndexes.map((index) => {
+          if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) {
+            throw new Error('An Action Trace result event draft index must be non-negative.');
+          }
+          const event = transitionEvents[index];
+          if (event === undefined)
+            throw new Error('An Action Trace result event draft index is invalid.');
+          return event.eventId;
+        });
+        const { resultEventDraftIndexes: _unused, ...resolvedPayload } = record;
+        payload = { ...resolvedPayload, resultEventIds };
+      }
+    }
+    return {
+      factKind: draft.factKind,
+      sourceEventIds,
+      sourceSequence: Math.min(
+        ...draft.sourceEventIndexes.map((index) => transitionEvents[index]!.localEventSequence),
+      ),
+      subtypeRank: subtypeRank(payload),
+      intraTypeOrdinal: intraTypeOrdinal(draft),
+      payload,
+    };
+  });
+  resolved.sort(
+    (left, right) =>
+      left.sourceSequence - right.sourceSequence ||
+      left.subtypeRank - right.subtypeRank ||
+      left.intraTypeOrdinal - right.intraTypeOrdinal,
+  );
+  return resolved.map((draft, draftIndex) => {
+    const fact = {
+      matchId: session.input.matchId,
+      factId: GENESIS_MATCH_ANCHOR_HASH,
+      factHash: GENESIS_MATCH_ANCHOR_HASH,
+      factKind: draft.factKind,
+      sourceEventIds: draft.sourceEventIds,
+      localFactSequence: session.facts.length + draftIndex,
+      payload: draft.payload,
+    } as MatchFact;
+    fact.factId = deriveFactId(fact);
+    fact.factHash = deriveMatchFactHash(fact);
+    return deepFreeze(MatchFactSchema.parse(fact));
+  });
+}
+
+export function commitModelBTransition(
+  session: ModelBSession,
+  draft: ModelBTransitionDraft,
+): ModelBSession {
+  assertModelBSessionTail(session);
+  if (draft.eventPayloads.length === 0) {
+    throw new Error('An event transition must contain at least one event payload.');
+  }
+  const previousAnchor = session.anchors.at(-1)!;
+  if (previousAnchor.status !== 'IN_PROGRESS') {
+    throw new Error('A completed Model B session cannot commit another event transition.');
+  }
+  assertModelBTransitionPlayerEligibility(
+    previousAnchor,
+    draft.eventPayloads,
+    session.input.rules.foulOutLimit,
+  );
+  const reduced = reduceModelBEventPayloads(
+    previousAnchor,
+    draft.eventPayloads,
+    session.input.rules.foulOutLimit,
+  );
+  const nextPeriod = draft.nextPeriod ?? previousAnchor.period;
+  if (nextPeriod < previousAnchor.period || nextPeriod > previousAnchor.period + 1) {
+    throw new Error(
+      'A Model B transition may only remain in period or advance exactly one period.',
+    );
+  }
+  if (nextPeriod > previousAnchor.period && reduced.periodClockSeconds !== 0) {
+    throw new Error('A Model B period may only advance after its clock reaches zero.');
+  }
+  if (
+    nextPeriod > previousAnchor.period &&
+    !draft.eventPayloads.some(
+      (payload) => payload.type === 'PERIOD_COMPLETED' && payload.period === previousAnchor.period,
+    )
+  ) {
+    throw new Error('Advancing a period requires its PERIOD_COMPLETED event.');
+  }
+  const nextPossession = draft.nextPossession ?? { ...previousAnchor.possession };
+  const status = draft.status ?? previousAnchor.status;
+  if (
+    status !== 'IN_PROGRESS' &&
+    !draft.eventPayloads.some(
+      (payload) =>
+        payload.type === 'MATCH_COMPLETED' &&
+        payload.terminationReason ===
+          (status === 'COMPLETED' ? 'COMPLETED' : 'FORFEIT_INSUFFICIENT_PLAYERS'),
+    )
+  ) {
+    throw new Error('A terminal Anchor requires its matching MATCH_COMPLETED event.');
+  }
+  const periodClockSeconds =
+    nextPeriod === previousAnchor.period
+      ? reduced.periodClockSeconds
+      : nextPeriod <= 4
+        ? session.input.rules.regularPeriodSeconds
+        : session.input.rules.overtimePeriodSeconds;
+  const controlBoundary = {
+    kind:
+      draft.controlBoundaryKind ??
+      (status === 'IN_PROGRESS'
+        ? nextPeriod === previousAnchor.period
+          ? 'DEAD_BALL'
+          : 'PERIOD_BREAK'
+        : 'MATCH_COMPLETE'),
+    period: nextPeriod,
+    possessionIndex: nextPossession.possessionIndex,
+    segmentIndex: nextPossession.segmentIndex,
+  };
+  const baseFragment = draft.effectiveFragment ?? previousAnchor.effectiveFragment;
+  assertModelBEffectApplication(
+    previousAnchor.effectiveFragment.effects,
+    baseFragment.effects,
+    draft.eventPayloads,
+  );
+  const possessionCommitted = draft.eventPayloads.some(
+    (payload) => payload.type === 'POSSESSION_ENDED',
+  );
+  const periodCompleted = draft.eventPayloads.some(
+    (payload) => payload.type === 'PERIOD_COMPLETED',
+  );
+  const effectsAfterPossession = decrementEffectsAfterCommittedPossession(
+    baseFragment.effects,
+    possessionCommitted,
+  );
+  const nextEffects = periodCompleted
+    ? effectsAfterPossession.filter((effect) => effect.duration.kind !== 'PERIOD_END')
+    : effectsAfterPossession;
+  const eligibleState = recalculateModelBEligibleLineupState(
+    session.input,
+    reduced.lineups,
+    reduced.roles,
+    reduced.boxScore,
+  );
+  const effectiveFragment = {
+    ...baseFragment,
+    tactics: {
+      home: { ...baseFragment.tactics.home },
+      away: { ...baseFragment.tactics.away },
+    },
+    lineups: reduced.lineups,
+    roles: eligibleState.roles,
+    effects: [...nextEffects],
+  };
+  const nextAnchor = makeAnchor({
+    ...previousAnchor,
+    previousAnchorHash: previousAnchor.anchorHash,
+    period: nextPeriod,
+    periodClockSeconds,
+    score: reduced.score,
+    possession: nextPossession,
+    eventCursor: previousAnchor.eventCursor + draft.eventPayloads.length,
+    lineups: reduced.lineups,
+    roles: eligibleState.roles,
+    pendingSubstitutionEntryHashes: [
+      ...(draft.pendingSubstitutionEntryHashes ?? previousAnchor.pendingSubstitutionEntryHashes),
+    ],
+    fatigueMilliByPlayer: (() => {
+      // Base energy cost + bench recovery
+      const energy = reduceModelBCommittedEnergy(
+        session.input,
+        previousAnchor,
+        draft.eventPayloads,
+      );
+      // Behavior-participant energy costs
+      if (draft.behaviorEnergyDeltaByPlayer) {
+        for (const [playerId, delta] of Object.entries(draft.behaviorEnergyDeltaByPlayer)) {
+          energy[playerId] = clampFixedPoint((energy[playerId] ?? 0) + delta, 0, 100_000);
+        }
+      }
+      // Period-break recovery (applied once when period advances)
+      if (draft.nextPeriod !== undefined && draft.nextPeriod > previousAnchor.period) {
+        const isHalftime = previousAnchor.period === 2 && draft.nextPeriod === 3;
+        const isPreOvertime = previousAnchor.period >= 4;
+        const recovery = isHalftime
+          ? MODEL_B_PARAMETER_REGISTRY.halftimeRecoveryMilli
+          : isPreOvertime
+            ? MODEL_B_PARAMETER_REGISTRY.overtimeBreakRecoveryMilli
+            : MODEL_B_PARAMETER_REGISTRY.quarterBreakRecoveryMilli;
+        for (const playerId of Object.keys(energy)) {
+          energy[playerId] = clampFixedPoint((energy[playerId] ?? 0) - recovery, 0, 100_000);
+        }
+      }
+      return energy;
+    })(),
+    chemistryWeightedMilli: eligibleState.chemistryWeightedMilli,
+    boxScore: reduced.boxScore,
+    effectiveFragment,
+    controlBoundary,
+    status,
+  });
+  const existingInSegment = session.events.filter(
+    (event) =>
+      event.period === previousAnchor.period &&
+      event.possessionIndex === previousAnchor.possession.possessionIndex &&
+      event.segmentIndex === previousAnchor.possession.segmentIndex,
+  ).length;
+  const transitionEvents = draft.eventPayloads.map((payload, index) =>
+    buildTransitionEvent(
+      previousAnchor,
+      nextAnchor.anchorHash,
+      previousAnchor.eventCursor + index,
+      existingInSegment + index,
+      payload,
+    ),
+  );
+  assertModelBTransitionBasketballCausality(transitionEvents);
+  const transitionFacts = buildTransitionFacts(session, transitionEvents, draft.facts ?? []);
+  const nextSession = freezeSession({
+    input: session.input,
+    anchors: [...session.anchors, nextAnchor],
+    events: [...session.events, ...transitionEvents],
+    facts: [...session.facts, ...transitionFacts],
+    transcriptEntries: [...session.transcriptEntries],
+  });
+  assertModelBTransitionBasketballFacts(nextSession, transitionEvents, transitionFacts);
+  assertModelBSessionTail(nextSession);
+  return nextSession;
+}
+
+export function commitModelBAutomatedDecision(
+  session: ModelBSession,
+  draft: ModelBAutomatedDecisionDraft,
+): ModelBSession {
+  assertModelBSessionTail(session);
+  const previousAnchor = session.anchors.at(-1)!;
+  if (previousAnchor.status !== 'IN_PROGRESS' || previousAnchor.controlBoundary === null) {
+    throw new Error('Automated decisions require an in-progress control boundary.');
+  }
+  const eligibleState = recalculateModelBEligibleLineupState(
+    session.input,
+    draft.effectiveFragment.lineups,
+    draft.effectiveFragment.roles,
+    previousAnchor.boxScore,
+  );
+  const effectiveFragment = {
+    ...draft.effectiveFragment,
+    roles: eligibleState.roles,
+    effects: [...draft.effectiveFragment.effects],
+  };
+  const nextAnchor = makeAnchor({
+    ...previousAnchor,
+    previousAnchorHash: previousAnchor.anchorHash,
+    transcriptCursor: previousAnchor.transcriptCursor + 1,
+    localRevision: previousAnchor.localRevision + 1,
+    lineups: effectiveFragment.lineups,
+    roles: effectiveFragment.roles,
+    chemistryWeightedMilli: eligibleState.chemistryWeightedMilli,
+    effectiveFragment,
+  });
+  const base = {
+    matchId: session.input.matchId,
+    previousAnchorHash: previousAnchor.anchorHash,
+    nextAnchorHash: nextAnchor.anchorHash,
+    controlBoundary: previousAnchor.controlBoundary,
+    localRevisionBefore: previousAnchor.localRevision,
+    localRevisionAfter: nextAnchor.localRevision,
+    effectiveFromSegmentKey: {
+      period: previousAnchor.controlBoundary.period,
+      possessionIndex: previousAnchor.controlBoundary.possessionIndex,
+      segmentIndex: previousAnchor.controlBoundary.segmentIndex,
+    },
+    effectiveFragment,
+    effectiveFragmentHash: nextAnchor.effectiveFragmentHash,
+    previousTranscriptHash:
+      session.transcriptEntries.at(-1)?.transcriptEntryHash ?? GENESIS_MATCH_TRANSCRIPT_HASH,
+    transcriptEntryHash: GENESIS_MATCH_TRANSCRIPT_HASH,
+    command: null,
+  };
+  const entry = (
+    draft.actor === 'RULES'
+      ? {
+          ...base,
+          actor: 'RULES' as const,
+          decisionIdentity: {
+            kind: 'RULES_DECISION' as const,
+            ruleId: draft.ruleId,
+            ruleInputHash: draft.ruleInputHash,
+          },
+        }
+      : {
+          ...base,
+          actor: draft.actor,
+          decisionIdentity: {
+            kind: 'AUTOMATED_POLICY' as const,
+            policyId: draft.policyId,
+            policyInputHash: draft.policyInputHash,
+          },
+        }
+  ) as MatchTranscriptEntry;
+  entry.transcriptEntryHash = deriveTranscriptEntryHash(entry);
+  const parsedEntry = deepFreeze(MatchTranscriptEntrySchema.parse(entry));
+  const nextSession = freezeSession({
+    input: session.input,
+    anchors: [...session.anchors, nextAnchor],
+    events: [...session.events],
+    facts: [...session.facts],
+    transcriptEntries: [...session.transcriptEntries, parsedEntry],
+  });
+  assertModelBSessionTail(nextSession);
+  return nextSession;
+}
