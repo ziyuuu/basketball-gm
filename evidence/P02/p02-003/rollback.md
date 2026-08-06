@@ -13,3 +13,9 @@ The rejected `b228ab9…` Candidate remains retained for review history. The B7 
 successor must be an ordinary commit on top of that history. If it must be withdrawn before merge,
 create an ordinary revert of the successor only while retaining B1R–B6R and the rejected Candidate
 record; do not force-push, reset, or restore a pre-v6 runner.
+
+The 2026-08-06 contract amendment is a later ordinary documentation successor. Before its matching
+implementation begins it can be withdrawn only by a new Owner decision and an ordinary revert; do
+not silently restore the superseded pre-match fatigue or active off-position Gate scenarios. After
+implementation begins, revert the amendment and all dependent implementation commits together in a
+normal revert PR.

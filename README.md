@@ -15,18 +15,19 @@ The T00 visual prototype is intentionally separate. This repository does not reu
 - P01-R2 candidate `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750` passed the independent
   technical review used by this personal project and was merged through PR #1.
 - Engine version: `0.1.2-p01-r2`.
-- P02-000 gameplay baseline v1.2 is Owner-approved; the 2026-08-02 amendment fixes the entire P02
-  team at 12 active players.
-- P02 development plan v1.2 is Owner-approved and carries the same 12-player rule.
+- P02-000 gameplay baseline v1.3 is Owner-approved; it includes the 12-player rule and the
+  2026-08-06 single-match energy/forced-mismatch amendment.
+- P02 development plan v1.3 is Owner-approved and replaces the invalid pre-match-fatigue and active
+  five-player-mismatch Gate inputs.
 - P01-M1 annual-grant integrity hardening merged through PR #7 at
   `main@5f3ed1cdd4a816e0c482f5161e86706eda1f4c60`; independent Gate #8 passed for its exact
   candidate before merge.
 - P02-001 merged through PR #10 at `main@5eb947f81fe2600c3cd710999e1acc4d4718c63b`.
 - The 12-player baseline/site-policy gate merged through PR #12 at
   `main@99c5b56a570d8e02b79dc006230f25c57c823595`.
-- P02-002 Issue #11 is `IN PROGRESS` from that exact base. It adds only headless Match contracts,
-  deterministic identity, fixed-point and keyed-RNG primitives; no resolver, GameState V2, save,
-  CLI/Web entrypoint, Site deployment, or P02-003 implementation is included.
+- P02-002 merged through PR #13. P02-003 is active in Draft PR #15; its B7 runner/evidence delivery
+  closed at `bf03e215…` with manifest 35/35 and CI #103. The 2026-08-06 energy/forced-mismatch
+  amendment requires targeted implementation remediation before B8 and Gate B.
 
 The history is intentionally not rewritten. Baseline `32861501...` failed P01 because of event-ID
 integrity. R1 `6984260...` repaired those IDs but still failed P01 because annual grants were
@@ -44,9 +45,9 @@ independent review.
 the P02 player model, Model B, three classified match types, atomic week settlement, and deferred
 systems.
 
-Implementation proceeds one dependency-cleared GitHub Issue and one PR at a time. P01-M1 and
-P02-001 are complete; P02-002 started only after the 12-player v1.2 baseline amendment reached
-`main`, and P02-003 remains unstarted. P02-008 remains split into an explicit V2 functional
+Implementation proceeds one dependency-cleared GitHub Issue and one PR at a time. P01-M1,
+P02-001 and P02-002 are complete; P02-003 remains headless and is implementing the v1.3 amendment
+before calibration. P02-008 remains split into an explicit V2 functional
 closure (`008A`) and a separate default-entry cutover (`008B`).
 
 Legacy P01 still contains its frozen 22-player regression fixture and historical save/evidence

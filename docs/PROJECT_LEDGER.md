@@ -1,26 +1,26 @@
 # Project Ledger
 
-> Updated: 2026-08-03
+> Updated: 2026-08-06
 
 ## Current stage
 
-| Item                         | Status                                                    |
-| ---------------------------- | --------------------------------------------------------- |
-| P00                          | Complete                                                  |
-| P01                          | Complete                                                  |
-| P02-000                      | Complete; v1.2 roster amendment Owner-approved 2026-08-02 |
-| P02 development plan         | v1.2 Owner-approved 2026-08-02                            |
-| P01-M1                       | Merged through PR #7; Gate #8 passed                      |
-| P02-001                      | Merged through PR #10                                     |
-| P02-002                      | Merged through PR #13                                     |
-| P02-003 design               | v2.9 FINAL Owner-approved; 95/100 READY FOR DEVELOPMENT   |
-| P02 gameplay implementation  | P02-003 Headless Model B authorized; implementation open  |
-| Current main                 | `45dc1a261172ebfff46f30b122cbdf5621596959`                |
-| Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`                |
-| Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`                |
-| Engine version               | `0.1.2-p01-r2`                                            |
-| Current decision             | P02-003 design frozen; first playable Site remains at P04 |
-| Current implementation Issue | GitHub #14 (`P02-003`, IMPLEMENTING / OWNER_AUTHORIZED)   |
+| Item                         | Status                                                           |
+| ---------------------------- | ---------------------------------------------------------------- |
+| P00                          | Complete                                                         |
+| P01                          | Complete                                                         |
+| P02-000                      | Complete; v1.3 energy/position amendment Owner-frozen 2026-08-06 |
+| P02 development plan         | v1.3 Owner-approved 2026-08-06                                   |
+| P01-M1                       | Merged through PR #7; Gate #8 passed                             |
+| P02-001                      | Merged through PR #10                                            |
+| P02-002                      | Merged through PR #13                                            |
+| P02-003 design               | v2.9 + R1/R2 rulings + 2026-08-06 energy amendment               |
+| P02 gameplay implementation  | B7 delivery closed at `bf03e215…`; amendment remediation next    |
+| Current main                 | `45dc1a261172ebfff46f30b122cbdf5621596959`                       |
+| Frozen P00/P01 code baseline | `6547fbf51b2a440fd9602eed82c869d70b1181e1`                       |
+| Accepted R2 candidate        | `f008514ef4b6c0f0af78bdf8a5a2dff86aaa2750`                       |
+| Engine version               | `0.1.2-p01-r2`                                                   |
+| Current decision             | Targeted energy/forced-mismatch remediation before B8            |
+| Current implementation Issue | GitHub #14 (`P02-003`, IMPLEMENTING / OWNER_AUTHORIZED)          |
 
 ## Frozen baseline
 
@@ -55,11 +55,13 @@ These engineering guarantees are not reopened by gameplay design.
 
 ## Approved P02-000 decision
 
-The Owner-approved `docs/P02_GAMEPLAY_BASELINE.md` v1.2 is the gameplay authority:
+The Owner-approved `docs/P02_GAMEPLAY_BASELINE.md` v1.3 is the gameplay authority:
 
 - one team plan and one match slot coexist in every operation week;
 - exam/wrap weeks have no player activity;
-- P02 uses ten abilities, fatigue, and individual chemistry aggregated from the current lineup;
+- P02 uses eleven match abilities including strength, single-match energy, and individual chemistry aggregated from the current lineup;
+- every match starts at 100 energy; time creates base consumption, actual participants create behavior consumption, and stamina only slows consumption;
+- normal lineups use primary positions; deterministic forced mismatch is allowed only when no primary-position player is available;
 - P02 uses exactly 12 active players; the formal/friendly roster is the entire team, while lineup
   order, starters, duties, tactics, and rotation remain player decisions;
 - official, friendly, and scrimmage records are isolated;
@@ -68,7 +70,7 @@ The Owner-approved `docs/P02_GAMEPLAY_BASELINE.md` v1.2 is the gameplay authorit
 - cards, production match UI, recruitment, full competitions, deeper content, LLM, and Agent work
   remain in later phases.
 
-The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.2 is also Owner-approved. It defines architecture,
+The separate `docs/P02_DEVELOPMENT_PLAN.md` v1.3 is also Owner-approved. It defines architecture,
 migration, test, Issue/PR, Gate, and rollback details without changing the gameplay authority.
 
 ## Approved P02-003 design authority
@@ -86,9 +88,9 @@ independent design audit scored it 95/100 and returned `READY FOR DEVELOPMENT`.
   chain, BOXOUT as a rule result, the state/shot-clock/RNG semantic contracts, and the
   Event/Fact/Statistic causality without expanding P02-002 Schema enums.
 
-This approval does not approve any implementation candidate or pass Gate B. P02-004 code remains
-blocked until an exact P02-003 candidate passes CI, independent Gate B review, and Owner merge
-confirmation.
+The B7 runner/evidence delivery blocker closed at `bf03e215…` with manifest 35/35 and CI #103.
+The 2026-08-06 energy/forced-mismatch amendment is later and not yet implemented. It does not pass
+Gate B; P02-004 remains blocked until the targeted remediation, B8 and independent Gate B review.
 
 ## Playable Site decision
 
@@ -104,11 +106,11 @@ confirmation.
 
 ## Next executable task
 
-1. Implement P02-003 through GitHub Issue #14 and one Draft PR from
-   `task/p02-003-headless-model-b`.
-2. Freeze the scenario registry before calibration, preserve P02-002 and Legacy contracts, and
-   produce the required direction, replay, invariant, performance, and evidence results.
-3. Create the Gate B audit Issue only after an exact candidate SHA and successful CI exist.
+1. Implement the frozen single-match energy and forced-mismatch amendment as an ordinary successor
+   on Draft PR #15 without changing accepted runner/Event/Fact/RNG/replay semantics.
+2. Pass focused amendment tests, full `pnpm check` and independent review; then resume B8 with the
+   revised stamina-endurance scenario and forced-mismatch contract matrix.
+3. Create the Gate B audit Issue only after B8 produces an exact candidate SHA and successful CI.
 4. Keep P02-004 code blocked until Gate B and Owner merge confirmation; keep the first playable Web
    deployment assigned to P04.
 
