@@ -176,6 +176,7 @@ pnpm evidence:manifest  # 36/36 verified
 ### r3 Rejection
 
 The r3 Candidate `904dc2e` was returned by independent review with 5 runtime contract gaps:
+
 1. Active mismatch starters not rejected
 2. Forced mismatch penalty bypassed in transition
 3. Behavior energy missing participant role contract

@@ -131,14 +131,14 @@ The v2.10-energy-r3 Candidate `904dc2e` was returned to development with 5 hard 
 
 #### Modified Files in r4 (6 files)
 
-| File | Change |
-|------|--------|
-| packages/domain/src/match/model-b/registries.ts | Per-role energy table, forced mismatch reason codes |
-| packages/domain/src/match/model-b/runner.ts | Transition execution position, participant role energy |
-| packages/domain/src/match/schemas.ts | Starter primary-position validation |
-| packages/domain/src/match/model-b/state-rules.ts | Forced mismatch selection, return-to-normal |
-| tests/p02-003-energy-forced-mismatch.test.ts | Real test coverage (72 tests, +9 new) |
-| tests/helpers/p02-003-fixtures.ts | Fix scrimmage away team position assignment |
+| File                                             | Change                                                 |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| packages/domain/src/match/model-b/registries.ts  | Per-role energy table, forced mismatch reason codes    |
+| packages/domain/src/match/model-b/runner.ts      | Transition execution position, participant role energy |
+| packages/domain/src/match/schemas.ts             | Starter primary-position validation                    |
+| packages/domain/src/match/model-b/state-rules.ts | Forced mismatch selection, return-to-normal            |
+| tests/p02-003-energy-forced-mismatch.test.ts     | Real test coverage (72 tests, +9 new)                  |
+| tests/helpers/p02-003-fixtures.ts                | Fix scrimmage away team position assignment            |
 
 ### Status
 
