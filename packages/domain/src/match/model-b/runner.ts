@@ -48,9 +48,10 @@ import {
   type ModelBSegmentResolution,
 } from './clock-rules.js';
 import {
+  applyEnergyTierPenaltyToAbility,
+  calculateBehaviorEnergyCostMilli,
   calculateChemistryExecutionModifierMilli,
   calculateEffectiveExecutionStages,
-  calculateFatiguePenaltyMilli,
   calculateOpportunityQualityMilli,
   calculateTacticalExecutionModifierMilli,
   calculateTeamCoordinationIndexMilli,
@@ -71,6 +72,7 @@ import {
   calculateTurnoverProbabilityMilli,
 } from './probabilities.js';
 import {
+  MODEL_B_BEHAVIOR_ENERGY_INTENSITY,
   MODEL_B_BEHAVIOR_REGISTRY,
   MODEL_B_PARAMETER_REGISTRY,
   type ModelBBehaviorId,
@@ -420,7 +422,6 @@ function effectiveExecution(
   return calculateEffectiveExecutionStages({
     player: currentSnapshot(session, playerSnapshot),
     blend,
-    fatigueSensitivity: 'FULL',
     assignedPosition: assignedPosition(session, side, playerSnapshot.playerId),
     applyPositionMismatch: true,
     traitContext,
@@ -449,7 +450,6 @@ function transitionIndividualExecution(
   return calculateEffectiveExecutionStages({
     player: currentSnapshot(session, playerSnapshot),
     blend,
-    fatigueSensitivity: 'FULL',
     assignedPosition: null,
     applyPositionMismatch: false,
     traitContext: 'NONE',
@@ -499,16 +499,17 @@ function transitionCandidateScore(
   noise: bigint,
   role: 'SUPPORT' | 'DRB_RETREAT' | 'LIVE_BALL_RETREAT',
 ): number {
+  const energyMilli = current(session).fatigueMilliByPlayer[participant.playerId] ?? 0;
   const values = modelBAbilityValues(participant);
-  const fatiguePenalty = calculateFatiguePenaltyMilli(
-    current(session).fatigueMilliByPlayer[participant.playerId] ?? participant.fatigueMilli,
-    'FULL',
+  const athleticismMilli = applyEnergyTierPenaltyToAbility(
+    values.athleticism * 1_000,
+    energyMilli,
+    'athleticism',
   );
-  const athleticismMilli = clampFixedPoint(values.athleticism * 1_000 - fatiguePenalty, 0, 100_000);
-  const tacticalUnderstandingMilli = clampFixedPoint(
-    values.tacticalUnderstanding * 1_000 - fatiguePenalty,
-    0,
-    100_000,
+  const tacticalUnderstandingMilli = applyEnergyTierPenaltyToAbility(
+    values.tacticalUnderstanding * 1_000,
+    energyMilli,
+    'tacticalUnderstanding',
   );
   const tendencyMilli =
     role === 'SUPPORT'
@@ -593,7 +594,7 @@ function resolveAutomatedBoundary(session: ModelBSession): ModelBSession | null 
       initialAssistantBoundary ||
       Object.values(anchor.fatigueMilliByPlayer).some(
         (fatigueMilli) =>
-          fatigueMilli >= MODEL_B_PARAMETER_REGISTRY.neutralRotationFatigueThresholdMilli,
+          fatigueMilli >= MODEL_B_PARAMETER_REGISTRY.neutralRotationEnergyThresholdMilli,
       );
     if (mayNeedRotation) {
       const plan = buildModelBNeutralRotationPlan(session);
@@ -770,6 +771,8 @@ class SegmentRuntime {
   transitionContextFactIndex: number | null = null;
   completedTransitionOffenseActions = 0;
   lastActionTraceFactIndex: number | null = null;
+  /** Per-player energy accumulated from behavior participation in this segment. */
+  behaviorEnergyDeltaByPlayer: Record<string, number> = {};
 
   constructor(session: ModelBSession, runnerVector: ModelBRunnerVector | null = null) {
     this.session = session;
@@ -834,6 +837,26 @@ class SegmentRuntime {
       possessionIndex: anchor.possession.possessionIndex,
       segmentIndex: anchor.possession.segmentIndex,
     };
+  }
+
+  /** Accumulate behavior-participant energy cost with stamina reduction. */
+  addBehaviorEnergyCost(
+    behaviorId: ModelBBehaviorId,
+    durationSeconds: number,
+    participantPlayerIds: readonly string[],
+  ): void {
+    const intensity = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
+    if (intensity === undefined) return;
+    for (const playerId of participantPlayerIds) {
+      // Find the player snapshot to get stamina
+      const player = [...this.offense, ...this.defense].find(p => p.playerId === playerId);
+      const stamina = player !== undefined
+        ? modelBAbilityValues(player).stamina
+        : 50; // fallback
+      const cost = calculateBehaviorEnergyCostMilli(intensity, durationSeconds, stamina);
+      this.behaviorEnergyDeltaByPlayer[playerId] =
+        (this.behaviorEnergyDeltaByPlayer[playerId] ?? 0) + cost;
+    }
   }
 
   transitionOffenseParticipants(): readonly MatchPlayerSnapshot[] {
@@ -936,6 +959,15 @@ class SegmentRuntime {
         ...coordinate,
       },
     });
+    // Accumulate behavior-participant energy cost
+    const participants = new Set([...input.actorIds, ...input.targetIds]);
+    if (participants.size > 0) {
+      this.addBehaviorEnergyCost(
+        input.behaviorId,
+        input.durationSeconds,
+        [...participants],
+      );
+    }
   }
 
   markTransitionFallback(
@@ -1558,6 +1590,7 @@ function resolveDefense(
     behaviorId === 'DOUBLET'
       ? (selectModelBDoubleTeamActors(
           runtime.defense.filter(({ playerId }) => playerId !== defender.playerId),
+          current(runtime.session).fatigueMilliByPlayer,
         )?.map(({ playerId }) => playerId) ?? [])
       : [];
   const actor =
@@ -2292,6 +2325,7 @@ function resolveShot(
           currentLineup: current(runtime.session).lineups[sideKey(runtime.defenseSide)],
           candidates: runtime.defense,
           directDefenderId: defender.playerId,
+          energyMilliByPlayerId: current(runtime.session).fatigueMilliByPlayer,
         });
   const shot = buildModelBShotResolution(runtime.session, {
     transitionEventOffset: runtime.prefix + shotStart,
@@ -2578,6 +2612,9 @@ function commitRuntime(
     eventPayloads: runtime.payloads,
     facts: runtime.facts,
     resolution,
+    ...(Object.keys(runtime.behaviorEnergyDeltaByPlayer).length > 0
+      ? { behaviorEnergyDeltaByPlayer: Object.freeze({ ...runtime.behaviorEnergyDeltaByPlayer }) }
+      : {}),
   });
 }
 

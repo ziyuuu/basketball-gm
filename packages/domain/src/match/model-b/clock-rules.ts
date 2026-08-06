@@ -16,6 +16,8 @@ export type ModelBActiveSegmentDraft = Readonly<{
   facts?: readonly ModelBFactDraft[];
   resolution: ModelBSegmentResolution;
   effectiveFragment?: MatchAnchor['effectiveFragment'];
+  /** Per-player additional energy from behavior participation in this segment. */
+  behaviorEnergyDeltaByPlayer?: Readonly<Record<string, number>>;
 }>;
 
 function oppositeSide(side: MatchAnchor['possession']['side']): 'HOME' | 'AWAY' {
@@ -217,6 +219,9 @@ export function commitModelBActiveSegment(
     ...(draft.effectiveFragment === undefined
       ? {}
       : { effectiveFragment: draft.effectiveFragment }),
+    ...(draft.behaviorEnergyDeltaByPlayer === undefined
+      ? {}
+      : { behaviorEnergyDeltaByPlayer: draft.behaviorEnergyDeltaByPlayer }),
   });
 }
 

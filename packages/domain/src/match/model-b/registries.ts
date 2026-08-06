@@ -5,8 +5,8 @@ import type { MatchDrawKind } from '../schemas.js';
 export const MODEL_B_LEGACY_REGISTRY_VERSION = 'p02-003-model-b-v2.9-final-r1';
 export const MODEL_B_LEGACY_RULES_CONTENT_HASH =
   'sha256:55b865f3f28dcdde0aead21d249e44e53d0d76b0106c6d11b7fa686f6c49efc2';
-export const MODEL_B_REGISTRY_VERSION = 'p02-003-model-b-v2.9-r1-final';
-export const MODEL_B_RULES_VERSION = 'p02-003-v2.9-r1-final';
+export const MODEL_B_REGISTRY_VERSION = 'p02-003-model-b-v2.10-energy-r1';
+export const MODEL_B_RULES_VERSION = 'p02-003-v2.10-energy-r1';
 
 export const MODEL_B_SNAPSHOT_PROFILE_REGISTRY = deepFreeze({
   legacySnapshot: {
@@ -277,6 +277,61 @@ export const MODEL_B_BEHAVIOR_MATRIX_IDS = deepFreeze([
 ] as const);
 
 export type ModelBBehaviorId = (typeof MODEL_B_BEHAVIOR_MATRIX_IDS)[number];
+
+/** v2.10 Energy intensity per behavior. All 44 behaviors must have an entry. */
+export const MODEL_B_BEHAVIOR_ENERGY_INTENSITY = deepFreeze({
+  // Advance
+  ADV: 'LIGHT',
+  REORG: 'LIGHT',
+  // Creation
+  DRIVE: 'HEAVY',
+  SHAKE: 'MODERATE',
+  ISO: 'HEAVY',
+  STEP_BACK: 'MODERATE',
+  POSTUP: 'HEAVY',
+  HIGH_POST_CREATION: 'LIGHT',
+  // Shot
+  SPOTUP: 'LIGHT',
+  CATCHSHOT: 'LIGHT',
+  THREE: 'MODERATE',
+  MID: 'LIGHT',
+  PULLUP: 'MODERATE',
+  CLOSE: 'MODERATE',
+  FLOATER: 'MODERATE',
+  HOOK: 'HEAVY',
+  LAYUP: 'MODERATE',
+  CONTACTFIN: 'HEAVY',
+  CONTESTEDFIN: 'HEAVY',
+  // Pass
+  PASS: 'LIGHT',
+  HPASS: 'LIGHT',
+  CREATIVE_PASS: 'MODERATE',
+  ASTOPP: 'LIGHT',
+  HELDKICK: 'LIGHT',
+  // Off-ball
+  SCREEN: 'LIGHT',
+  CUT: 'MODERATE',
+  DOUBLECREATE: 'MODERATE',
+  // Defense
+  ONDEF: 'LIGHT',
+  PRESS: 'MODERATE',
+  STLTRY: 'LIGHT',
+  CONTEST: 'LIGHT',
+  HELPD: 'HEAVY',
+  DOUBLET: 'HEAVY',
+  TRANSITIOND: 'MODERATE',
+  // Rule / attribution only (non-selectable)
+  FT: 'LIGHT',
+  PASSTOV: 'LIGHT',
+  BALLDESTROY: 'LIGHT',
+  PUTBACK: 'LIGHT',
+  BLK: 'LIGHT',
+  FOUL: 'LIGHT',
+  ORB: 'LIGHT',
+  DRB: 'LIGHT',
+  BOXOUT: 'LIGHT',
+  BLKLOOSE: 'LIGHT',
+} as const satisfies Record<ModelBBehaviorId, string>);
 
 export const MODEL_B_EVENT_TYPES = deepFreeze([
   'CLOCK_ADVANCED',
@@ -772,11 +827,51 @@ export const MODEL_B_PARAMETER_REGISTRY = deepFreeze({
   regularPeriodSeconds: 600,
   overtimePeriodSeconds: 300,
   foulOutLimit: 5,
+  /** @deprecated v2.9 continuous fatigue — superseded by energy tier system */
   loadByMatchKind: { SCRIMMAGE: 6_000, FRIENDLY: 10_000, OFFICIAL: 12_000 },
-  staminaLoadReductionMilliPerPoint: 3,
-  fatiguePenaltyThresholdMilli: 30_000,
-  fatiguePenaltyRateMilli: 200,
-  fatiguePenaltyMaximumMilli: 14_000,
+  /** @deprecated v2.9 — use staminaEnergyReductionMilliPerPoint */
+  staminaLoadReductionMilliPerPoint_LEGACY: 3,
+  // ── v2.10 energy system [CALIBRATE] ──
+  /** Milli-energy consumed per on-court second per player (before stamina). */
+  energyBaseCostPerSecondMilli: 100,
+  /** Stamina reduces both base and behavior energy cost: factor = (1000 - stamina * N) / 1000. */
+  staminaEnergyReductionMilliPerPoint: 3,
+  /** Energy tier → per-ability penalty in milli (indexed by the band's lower bound). */
+  energyTierPenaltyMilli: deepFreeze({
+    80: 0,
+    70: -5_000,
+    60: -10_000,
+    50: -15_000,
+    40: -20_000,
+    30: -25_000,
+    0: -30_000,
+  } as const),
+  /** Behavior intensity → per-participant per-second energy cost in milli. */
+  energyIntensityCostMilli: deepFreeze({ LIGHT: 200, MODERATE: 400, HEAVY: 800 } as const),
+  /** Bench recovery per elapsed game second in milli. */
+  benchRecoveryPerSecondMilli: 50,
+  /** Energy recovered by all players at a normal quarter break. */
+  quarterBreakRecoveryMilli: 5_000,
+  /** Energy recovered at halftime (period 2→3). */
+  halftimeRecoveryMilli: 20_000,
+  /** Energy recovered before overtime (same as a normal quarter break). */
+  overtimeBreakRecoveryMilli: 5_000,
+  /** Timeouts recover no energy (P02-003 has no timeouts). */
+  timeoutRecoveryMilli: 0,
+  // ── v2.10 rotation [CALIBRATE] ──
+  /** Energy consumed threshold for neutral rotation substitution eligibility. */
+  neutralRotationEnergyThresholdMilli: 60_000,
+  /** Minimum energy advantage a bench replacement needs over the outgoing player. */
+  neutralRotationMinimumEnergyAdvantageMilli: 10_000,
+  // ── v2.10 forced mismatch [CALIBRATE] ──
+  /** Unified ability penalty for players forced into a non-primary position (milli). */
+  forcedMismatchPenaltyMilli: -8_000,
+  /** @deprecated v2.9 continuous fatigue threshold */
+  fatiguePenaltyThresholdMilli_LEGACY: 30_000,
+  /** @deprecated v2.9 continuous fatigue rate */
+  fatiguePenaltyRateMilli_LEGACY: 200,
+  /** @deprecated v2.9 continuous fatigue max */
+  fatiguePenaltyMaximumMilli_LEGACY: 14_000,
   chemistryRoleWeights: {
     DEFAULT: 1_000,
     PRIMARY_ORGANIZER: 1_250,
@@ -786,14 +881,20 @@ export const MODEL_B_PARAMETER_REGISTRY = deepFreeze({
   chemistryExecutionRateMilli: 120,
   chemistryExecutionMinimumMilli: -6_000,
   chemistryExecutionMaximumMilli: 6_000,
-  secondaryPositionPenaltyMilli: -3_000,
-  otherPositionPenaltyMilli: -8_000,
+  /** @deprecated v2.9 secondary position penalty — superseded by forcedMismatchPenaltyMilli */
+  secondaryPositionPenaltyMilli_LEGACY: -3_000,
+  /** @deprecated v2.9 other position penalty — superseded by forcedMismatchPenaltyMilli */
+  otherPositionPenaltyMilli_LEGACY: -8_000,
   traitBonusMilli: 6_000,
   tacticalExecutionCapMilli: 6_000,
-  paceLoadFactors: { SLOW: 900, BALANCED: 1_000, FAST: 1_150 },
-  defenseLoadFactors: { PRESSURE: 1_100, BALANCED: 1_000, PAINT_PROTECT: 1_000 },
-  tacticalLoadMinimumMilli: 850,
-  tacticalLoadMaximumMilli: 1_200,
+  /** @deprecated v2.9 pace load factors — base energy no longer multiplied */
+  paceLoadFactors_LEGACY: { SLOW: 900, BALANCED: 1_000, FAST: 1_150 },
+  /** @deprecated v2.9 defense load factors — base energy no longer multiplied */
+  defenseLoadFactors_LEGACY: { PRESSURE: 1_100, BALANCED: 1_000, PAINT_PROTECT: 1_000 },
+  /** @deprecated v2.9 tactical load min */
+  tacticalLoadMinimumMilli_LEGACY: 850,
+  /** @deprecated v2.9 tactical load max */
+  tacticalLoadMaximumMilli_LEGACY: 1_200,
   paceDurationFactors: { SLOW: 1_120, BALANCED: 1_000, FAST: 880 },
   transitionWeightFactors: { SLOW: 800, BALANCED: 1_000, FAST: 1_250 },
   paceTurnoverModifierMilli: { SLOW: -15, BALANCED: 0, FAST: 15 },
@@ -839,8 +940,10 @@ export const MODEL_B_PARAMETER_REGISTRY = deepFreeze({
     baselineMaximumSeconds: 24,
   },
   shortHandedDefensePenaltyMilliPerMissingPlayer: 4_000,
-  neutralRotationFatigueThresholdMilli: 70_000,
-  neutralRotationMinimumFatigueAdvantageMilli: 10_000,
+  /** @deprecated v2.9 fatigue threshold — use neutralRotationEnergyThresholdMilli */
+  neutralRotationFatigueThresholdMilli_LEGACY: 70_000,
+  /** @deprecated v2.9 fatigue advantage — use neutralRotationMinimumEnergyAdvantageMilli */
+  neutralRotationMinimumFatigueAdvantageMilli_LEGACY: 10_000,
   turnover: {
     baseMilli: 130,
     differenceCoefficientNumerator: 2,
@@ -1003,6 +1106,7 @@ export const MODEL_B_RULES_CONTENT_REGISTRY = deepFreeze({
   snapshotProfiles: MODEL_B_SNAPSHOT_PROFILE_REGISTRY,
   behaviorRegistry: MODEL_B_BEHAVIOR_REGISTRY,
   behaviorMatrixIds: MODEL_B_BEHAVIOR_MATRIX_IDS,
+  behaviorEnergyIntensity: MODEL_B_BEHAVIOR_ENERGY_INTENSITY,
   eventTypes: MODEL_B_EVENT_TYPES,
   drawKinds: MODEL_B_DRAW_KINDS,
   executionBlends: MODEL_B_EXECUTION_BLEND_REGISTRY,
@@ -1068,6 +1172,25 @@ export function assertModelBRegistryIntegrity(): void {
   }
   if (MODEL_B_LEGACY_RULES_CONTENT_HASH === MODEL_B_RULES_CONTENT_HASH) {
     throw new Error('R1 Model B rules/content identity must differ from the legacy v2.9 identity.');
+  }
+  // v2.10 energy intensity integrity
+  for (const behaviorId of MODEL_B_BEHAVIOR_MATRIX_IDS) {
+    const intensity = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
+    if (intensity === undefined) {
+      throw new Error(`Behavior ${behaviorId} missing from MODEL_B_BEHAVIOR_ENERGY_INTENSITY.`);
+    }
+    if (!['LIGHT', 'MODERATE', 'HEAVY'].includes(intensity)) {
+      throw new Error(`Behavior ${behaviorId} energy intensity must be LIGHT/MODERATE/HEAVY.`);
+    }
+  }
+  // v2.10 energy tier band keys
+  const tierKeys = Object.keys(MODEL_B_PARAMETER_REGISTRY.energyTierPenaltyMilli).map(Number);
+  const expectedTierKeys = [80, 70, 60, 50, 40, 30, 0];
+  if (
+    tierKeys.length !== expectedTierKeys.length ||
+    !expectedTierKeys.every((k) => tierKeys.includes(k))
+  ) {
+    throw new Error('Energy tier penalty keys must exactly match [80,70,60,50,40,30,0].');
   }
   for (const scenario of MODEL_B_SCENARIO_REGISTRY.scenarios) {
     if (scenario.seeds.length !== 64 || new Set(scenario.seeds).size !== 64) {

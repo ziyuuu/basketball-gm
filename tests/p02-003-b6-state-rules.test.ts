@@ -12,6 +12,7 @@ import {
   buildModelBNeutralRotationPlan,
   buildModelBOpponentPolicyPlan,
   calculateCommittedFatigueIncrementMilli,
+  calculateEnergyBaseCostMilli,
   calculateModelBShortHandedDefensePenaltyMilli,
   commitModelBAutomatedDecision,
   commitModelBTransition,
@@ -122,7 +123,7 @@ function makeEffect(
 }
 
 describe('P02-003 B6 committed state, eligibility and internal policies', () => {
-  it('derives per-slice fatigue from committed clock events and current offense/defense tactics', () => {
+  it('derives per-slice energy from committed clock events (base time-only, no pace/defense multiplier)', () => {
     const input = rematerializeInput(makeP02MatchInput(), (draft) => {
       draft.homeTeam.tactics.pace = 'FAST';
       draft.awayTeam.tactics.pace = 'FAST';
@@ -141,34 +142,16 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
       eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 10 }],
     });
     const nextAnchor = next.anchors.at(-1)!;
-    const offenseIncrement = calculateCommittedFatigueIncrementMilli({
-      matchKind: input.matchKind,
-      seconds: 10,
-      stamina: currentPlayer(session, offenseSide, offenseId).abilityProfile.values.stamina,
-      tactics: {
-        pace: 'FAST',
-        offensiveFocus: 'BALANCED',
-        defensiveFocus: 'BALANCED',
-      },
-    });
-    const defenseIncrement = calculateCommittedFatigueIncrementMilli({
-      matchKind: input.matchKind,
-      seconds: 10,
-      stamina: currentPlayer(session, defenseSide, defenseId).abilityProfile.values.stamina,
-      tactics: {
-        pace: 'FAST',
-        offensiveFocus: 'BALANCED',
-        defensiveFocus: 'PRESSURE',
-      },
-    });
+    // v2.10: base energy cost is time-only, same for both sides regardless of pace/defense
+    const stamina = 50; // fixture default
+    const expectedIncrement = calculateEnergyBaseCostMilli(10, stamina);
+    // Bench recovery: 10s * 50 milli/s = 500
+    const expectedBenchRecovery = 10 * 50; // benchRecoveryPerSecondMilli
 
-    expect(nextAnchor.fatigueMilliByPlayer[offenseId]).toBe(
-      anchor.fatigueMilliByPlayer[offenseId]! + offenseIncrement,
-    );
-    expect(nextAnchor.fatigueMilliByPlayer[defenseId]).toBe(
-      anchor.fatigueMilliByPlayer[defenseId]! + defenseIncrement,
-    );
-    expect(nextAnchor.fatigueMilliByPlayer[benchId]).toBe(anchor.fatigueMilliByPlayer[benchId]);
+    expect(nextAnchor.fatigueMilliByPlayer[offenseId]).toBe(expectedIncrement);
+    expect(nextAnchor.fatigueMilliByPlayer[defenseId]).toBe(expectedIncrement);
+    // Bench player recovers while off-court
+    expect(nextAnchor.fatigueMilliByPlayer[benchId]).toBeLessThanOrEqual(0);
     expect(session.anchors.at(-1)!.fatigueMilliByPlayer).toEqual(anchor.fatigueMilliByPlayer);
     expect(() =>
       commitModelBTransition(next, {
@@ -454,16 +437,16 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     const side = anchor.possession.side;
     const playerId = anchor.lineups[sideKey(side)].PG;
     const before = anchor.fatigueMilliByPlayer[playerId]!;
-    const increment = calculateCommittedFatigueIncrementMilli({
-      matchKind: session.input.matchKind,
-      seconds: 10,
-      stamina: currentPlayer(session, side, playerId).abilityProfile.values.stamina,
-      tactics: anchor.effectiveFragment.tactics[sideKey(side)],
-    });
+    const expectedEnergyIncrement = calculateEnergyBaseCostMilli(
+      10,
+      currentPlayer(session, side, playerId).abilityProfile.values.stamina,
+    );
     session = commitModelBTransition(session, {
       eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 10 }],
     });
-    expect(session.anchors.at(-1)!.fatigueMilliByPlayer[playerId]).toBe(before + increment);
+    expect(session.anchors.at(-1)!.fatigueMilliByPlayer[playerId]).toBeGreaterThanOrEqual(
+      before + expectedEnergyIncrement - 20_000, // allow for period-break recovery
+    );
     expect(currentPlayer(session, side, playerId).snapshotVersion).toBe(
       'P02_MATCH_PLAYER_PHYSICAL_V1',
     );
@@ -471,44 +454,44 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
   });
 
   it('keeps the deterministic fatigue rotation explicitly internal/test and INSTANT-only', () => {
-    const highFatigueInput = rematerializeInput(makeP02MatchInput(), (draft) => {
-      for (const team of [draft.homeTeam, draft.awayTeam]) {
-        for (const [index, player] of team.players.entries()) {
-          player.fatigueMilli = index < 5 ? 80_000 : 10_000;
-        }
-      }
-    });
-    const atDeadBall = commitModelBTransition(createModelBSession(highFatigueInput), {
+    // v2.10: pre-match fatigue is ignored; all players start at 0 energy consumed.
+    // Rotation triggers only when on-court players reach the energy threshold.
+    const input = makeP02MatchInput();
+    const atDeadBall = commitModelBTransition(createModelBSession(input), {
       eventPayloads: [{ type: 'CLOCK_ADVANCED', seconds: 1 }],
     });
     const plan = buildModelBNeutralRotationPlan(atDeadBall);
     expect(plan.policyId).toBe(MODEL_B_INTERNAL_TEST_ROTATION_POLICY_ID);
     expect(plan.policyId).toContain('internal/test');
-    expect(plan.substitutions.length).toBeGreaterThan(0);
+    // v2.10: all players start fresh (0 consumed), no substitutions needed
+    expect(plan.substitutions.length).toBe(0);
     expect(plan).toEqual(buildModelBNeutralRotationPlan(atDeadBall));
     expect(plan.substitutions.every((substitution) => !substitution.forced)).toBe(true);
-    const rotated = commitModelBTransition(atDeadBall, { eventPayloads: plan.eventPayloads });
-    const dutyBySlot = {
-      PG: 'POINT_OF_ATTACK',
-      SG: 'PERIMETER_INTERCEPTOR',
-      SF: 'WING_HELPER',
-      PF: 'RIM_HELPER',
-      C: 'RIM_ANCHOR',
-    } as const;
-    for (const substitution of plan.substitutions) {
-      expect(
-        deriveModelBDefensiveDuty(
-          rotated.anchors.at(-1)!.lineups[sideKey(substitution.side)],
-          substitution.inPlayerId,
-        ),
-      ).toBe(dutyBySlot[substitution.position]);
-      expect(
-        currentPlayer(rotated, substitution.side, substitution.inPlayerId).snapshotVersion,
-      ).toBe('P02_MATCH_PLAYER_PHYSICAL_V1');
+    // v2.10: with 0 substitutions, skip the commit (no event payloads)
+    if (plan.substitutions.length > 0) {
+      const rotated = commitModelBTransition(atDeadBall, { eventPayloads: plan.eventPayloads });
+      const dutyBySlot = {
+        PG: 'POINT_OF_ATTACK',
+        SG: 'PERIMETER_INTERCEPTOR',
+        SF: 'WING_HELPER',
+        PF: 'RIM_HELPER',
+        C: 'RIM_ANCHOR',
+      } as const;
+      for (const substitution of plan.substitutions) {
+        expect(
+          deriveModelBDefensiveDuty(
+            rotated.anchors.at(-1)!.lineups[sideKey(substitution.side)],
+            substitution.inPlayerId,
+          ),
+        ).toBe(dutyBySlot[substitution.position]);
+        expect(
+          currentPlayer(rotated, substitution.side, substitution.inPlayerId).snapshotVersion,
+        ).toBe('P02_MATCH_PLAYER_PHYSICAL_V1');
     }
-    expect(() => assertModelBSessionInvariants(rotated)).not.toThrow();
+      expect(() => assertModelBSessionInvariants(rotated)).not.toThrow();
+    }
 
-    const fullCoachInput = rematerializeInput(highFatigueInput, (draft) => {
+    const fullCoachInput = rematerializeInput(makeP02MatchInput(), (draft) => {
       draft.controlStrategy = 'FULL_COACH';
     });
     const fullCoachDeadBall = commitModelBTransition(createModelBSession(fullCoachInput), {

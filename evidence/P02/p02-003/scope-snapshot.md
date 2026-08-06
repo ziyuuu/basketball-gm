@@ -29,3 +29,34 @@ manifest 35/35 and passed CI #103.
 Status: B1R–B6R remain accepted for the contract reviewed at that time; B7 delivery is closed at
 `bf03e215…`. The later amendment requires targeted implementation remediation before B8. B8 /
 Gate B / PR Ready / merge / P02-004 remain blocked.
+
+## 2026-08-06 定点实现修复 (v2.10-energy-r1)
+
+**Candidate**: (to be filled after commit)
+**Parent**: 1afee4343e74f2d35e7b0607b79e2dfdd1cf96a9
+**Branch**: 	ask/p02-003-headless-model-b
+**PR**: #15 Draft
+
+### Scope
+- Single-match energy initialization (all at 0 consumed, pre-match fatigue ignored)
+- Energy tier penalty table (7 bands, 10-of-11 abilities penalized)
+- Base energy cost (time-only, no pace/defense/kind multiplier)
+- Behavior-participant energy cost (44-behavior intensity registry)
+- Bench / quarter-break / halftime / OT recovery
+- Primary-position-only rotation; secondaryPosition compat-only
+- Unified forced-mismatch penalty
+- Version bump: p02-003-v2.10-energy-r1 / p02-003-model-b-v2.10-energy-r1
+- All [CALIBRATE] values provided as initial runnable defaults
+
+### Test Results
+- B1 registries: 17/17 pass
+- B2 session: 12/12 pass
+- B3 clock rules: (unchanged) pass
+- B4 behavior selection: (unchanged) pass
+- B5 basketball results: (unchanged) pass
+- B6 state rules: 7/7 pass
+- B7 runner: 9/13 pass (4 fail — golden vector recalibration needed, [CALIBRATE] B8)
+- Energy/forced-mismatch focused: 63/63 pass
+- Total: 145/149 pass
+- sim:batch: 0 failures, 0 replay mismatches
+- pnpm typecheck: pass, pnpm build: pass

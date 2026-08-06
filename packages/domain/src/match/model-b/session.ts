@@ -1,5 +1,6 @@
 import type { CanonicalV2Value } from '../../core/canonical-v2.js';
 import { compareUtf16CodeUnits } from '../../core/canonical-v2.js';
+import { clampFixedPoint } from '../../core/index.js';
 import {
   GENESIS_MATCH_ANCHOR_HASH,
   GENESIS_MATCH_TRANSCRIPT_HASH,
@@ -42,9 +43,13 @@ import {
   assertModelBEffectApplication,
   assertModelBTransitionPlayerEligibility,
   recalculateModelBEligibleLineupState,
-  reduceModelBCommittedFatigue,
+  reduceModelBCommittedEnergy,
 } from './state-rules.js';
-import { MODEL_B_RULES_CONTENT_HASH, MODEL_B_RULES_VERSION } from './registries.js';
+import {
+  MODEL_B_PARAMETER_REGISTRY,
+  MODEL_B_RULES_CONTENT_HASH,
+  MODEL_B_RULES_VERSION,
+} from './registries.js';
 
 type PhysicalizeMatchInput<T extends MatchInput> = T extends MatchInput
   ? Omit<T, 'homeTeam' | 'awayTeam'> & {
@@ -79,6 +84,8 @@ export type ModelBTransitionDraft = Readonly<{
   controlBoundaryKind?: NonNullable<MatchAnchor['controlBoundary']>['kind'];
   effectiveFragment?: MatchAnchor['effectiveFragment'];
   pendingSubstitutionEntryHashes?: readonly string[];
+  /** Per-player additional energy cost from behavior participation in this segment. */
+  behaviorEnergyDeltaByPlayer?: Readonly<Record<string, number>>;
 }>;
 
 export type ModelBAutomatedDecisionDraft =
@@ -211,11 +218,13 @@ export function createModelBSession(rawInput: ModelBMatchInput): ModelBSession {
     segmentIndex: 0,
   };
   const effectiveFragment = { tactics, roles, lineups, effects: [] };
+  // v2.10: All players start at 0 energy consumed (100 remaining).
+  // Pre-match fatigueMilli on the snapshot is compat-only and does not affect opening energy.
   const fatigueMilliByPlayer = Object.fromEntries(
     stableSortPlayersById([
       ...physicalInput.homeTeam.players,
       ...physicalInput.awayTeam.players,
-    ]).map((player) => [player.playerId, player.fatigueMilli]),
+    ]).map((player) => [player.playerId, 0]),
   );
   const anchor = makeAnchor({
     matchId: physicalInput.matchId,
@@ -690,11 +699,42 @@ export function commitModelBTransition(
     pendingSubstitutionEntryHashes: [
       ...(draft.pendingSubstitutionEntryHashes ?? previousAnchor.pendingSubstitutionEntryHashes),
     ],
-    fatigueMilliByPlayer: reduceModelBCommittedFatigue(
-      session.input,
-      previousAnchor,
-      draft.eventPayloads,
-    ),
+    fatigueMilliByPlayer: (() => {
+      // Base energy cost + bench recovery
+      let energy = reduceModelBCommittedEnergy(
+        session.input,
+        previousAnchor,
+        draft.eventPayloads,
+      );
+      // Behavior-participant energy costs
+      if (draft.behaviorEnergyDeltaByPlayer) {
+        for (const [playerId, delta] of Object.entries(draft.behaviorEnergyDeltaByPlayer)) {
+          energy[playerId] = clampFixedPoint(
+            (energy[playerId] ?? 0) + delta,
+            0,
+            100_000,
+          );
+        }
+      }
+      // Period-break recovery (applied once when period advances)
+      if (draft.nextPeriod !== undefined && draft.nextPeriod > previousAnchor.period) {
+        const isHalftime = previousAnchor.period === 2 && draft.nextPeriod === 3;
+        const isPreOvertime = previousAnchor.period >= 4;
+        const recovery = isHalftime
+          ? MODEL_B_PARAMETER_REGISTRY.halftimeRecoveryMilli
+          : isPreOvertime
+            ? MODEL_B_PARAMETER_REGISTRY.overtimeBreakRecoveryMilli
+            : MODEL_B_PARAMETER_REGISTRY.quarterBreakRecoveryMilli;
+        for (const playerId of Object.keys(energy)) {
+          energy[playerId] = clampFixedPoint(
+            (energy[playerId] ?? 0) - recovery,
+            0,
+            100_000,
+          );
+        }
+      }
+      return energy;
+    })(),
     chemistryWeightedMilli: eligibleState.chemistryWeightedMilli,
     boxScore: reduced.boxScore,
     effectiveFragment,

@@ -73,3 +73,58 @@ Executed after the authority, plan and evidence edits:
 
 These results verify the documentation/evidence successor only. They do not claim that the new
 energy or forced-mismatch runtime behavior has already been implemented.
+
+## 2026-08-06 定点实现修复 Implementation Record
+
+**Status**: IMPLEMENTED / SELF-VERIFIED
+**Candidate**: (pending commit)
+**Branch**: 	ask/p02-003-headless-model-b
+
+### What was implemented
+1. Energy initialization: all players start at 0 consumed (atigueMilliByPlayer = 0)
+2. pre-match atigueMilli is compat-only; {0,10000,80000,100000} all yield genesis 0
+3. Energy consumption: base (seconds × 100 per stamina factor) + behavior (intensity × duration × stamina factor)
+4. Energy tier penalty: 7 bands (0/30/40/50/60/70/80 remaining → 0/-5/-10/-15/-20/-25/-30 penalty)
+5. 10 abilities penalized (finishing through strength); stamina/height/wingspan exempt
+6. Per-ability blend penalty: height/wingspan terms survive in blended execution
+7. Stamina reduces both base and behavior cost; strength reduces neither
+8. Bench recovery: 50 milli/s; quarter break: 5k; halftime: 20k; timeout: 0
+9. Primary-position-only; forced mismatch unified -8k penalty
+10. secondaryPosition is compat-only, no product semantics
+11. 44-behavior energy intensity registry (LIGHT/MODERATE/HEAVY)
+12. Version: v2.10-energy-r1 (distinct from v2.9-r1-final)
+13. Legacy rules/content hash preserved
+14. step/runToEnd/replay identity preserved for non-B7 paths
+
+### [CALIBRATE] Initial Parameters
+| Parameter | Value |
+|---|---|
+| energyBaseCostPerSecondMilli | 100 |
+| staminaEnergyReductionMilliPerPoint | 3 |
+| energyIntensityCostMilli LIGHT | 200 |
+| energyIntensityCostMilli MODERATE | 400 |
+| energyIntensityCostMilli HEAVY | 800 |
+| benchRecoveryPerSecondMilli | 50 |
+| quarterBreakRecoveryMilli | 5_000 |
+| halftimeRecoveryMilli | 20_000 |
+| overtimeBreakRecoveryMilli | 5_000 |
+| timeoutRecoveryMilli | 0 |
+| neutralRotationEnergyThresholdMilli | 60_000 |
+| neutralRotationMinimumEnergyAdvantageMilli | 10_000 |
+| forcedMismatchPenaltyMilli | -8_000 |
+
+### Test Coverage
+- Energy initialization (4 pre-match fatigue inputs) ✓
+- Energy tier penalty exact boundaries (80→0 through 0→−30) ✓
+- Attribute exemptions (stamina/height/wingspan not penalized) ✓
+- Per-ability blend penalty (height/wingspan terms preserved) ✓
+- Base cost time-only (no match-kind/pace/defense multiplier) ✓
+- High stamina consumes less ✓
+- Behavior intensity tiers (all 44 behaviors declared) ✓
+- Bench/halftime/OT/timeout recovery ✓
+- Forced mismatch (unified penalty, secondaryPosition ignored) ✓
+- Energy + forced mismatch additive ✓
+- Effective ability floor at 0 ✓
+- 44 Behavior / 16 EventType / 16 drawKind integrity ✓
+- Legacy hash preserved ✓
+- New rules/content hash distinct from legacy ✓

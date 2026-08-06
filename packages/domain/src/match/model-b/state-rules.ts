@@ -14,7 +14,7 @@ import {
   type MatchEvent,
 } from '../schemas.js';
 import {
-  calculateCommittedFatigueIncrementMilli,
+  calculateEnergyBaseCostMilli,
   calculateLineupChemistryMilli,
   modelBAbilityValues,
   type MatchPlayerSnapshot,
@@ -88,8 +88,8 @@ function rosterOrdinal(input: ModelBMatchInput, side: MatchSide, playerId: strin
 
 function positionFitOrdinal(player: MatchPlayerSnapshot, position: MatchPosition): number {
   if (player.primaryPosition === position) return 0;
-  if (player.secondaryPosition === position) return 1;
-  return 2;
+  // secondaryPosition is compat-only; all non-primary positions tie at rank 1
+  return 1;
 }
 
 function positionAbilitySummary(player: MatchPlayerSnapshot, position: MatchPosition): number {
@@ -171,16 +171,16 @@ export function calculateModelBShortHandedDefensePenaltyMilli(
 }
 
 /**
- * Accumulates fatigue only from committed CLOCK_ADVANCED payloads. The current
- * offense controls pace; the defensive-focus load applies only to the defending
- * side for that time slice.
+ * v2.10: Accumulates energy from committed CLOCK_ADVANCED payloads.
+ * Base cost (time-only, no pace/defense/kind multiplier) + bench recovery.
+ * Behavior-participant costs are added separately by the runner.
  */
-export function reduceModelBCommittedFatigue(
+export function reduceModelBCommittedEnergy(
   input: ModelBMatchInput,
   previousAnchor: MatchAnchor,
   payloads: readonly MatchEvent['payload'][],
 ): MatchAnchor['fatigueMilliByPlayer'] {
-  const fatigue = { ...previousAnchor.fatigueMilliByPlayer };
+  const energy = { ...previousAnchor.fatigueMilliByPlayer };
   const lineups = {
     home: { ...previousAnchor.lineups.home },
     away: { ...previousAnchor.lineups.away },
@@ -195,40 +195,56 @@ export function reduceModelBCommittedFatigue(
   };
   const offenseSide = previousAnchor.possession.side;
   const defenseSide = oppositeSide(offenseSide);
-  const offensePace = previousAnchor.effectiveFragment.tactics[sideKey(offenseSide)].pace;
 
-  const addCommittedSeconds = (side: MatchSide, seconds: number): void => {
+  // Total clock seconds in this transition
+  const totalClockSeconds = payloads
+    .filter((p): p is Extract<MatchEvent['payload'], { type: 'CLOCK_ADVANCED' }> =>
+      p.type === 'CLOCK_ADVANCED')
+    .reduce((sum, p) => sum + p.seconds, 0);
+
+  // Base energy cost for all 10 on-court eligible players (per stamina)
+  const addBaseEnergyCost = (side: MatchSide): void => {
     const key = sideKey(side);
-    const defensiveFocus =
-      side === defenseSide
-        ? previousAnchor.effectiveFragment.tactics[key].defensiveFocus
-        : 'BALANCED';
     for (const playerId of eligibleIdsForLineup(
       lineups[key],
       fouls[key],
       input.rules.foulOutLimit,
     )) {
       const player = snapshots[key].get(playerId);
-      if (player === undefined) throw new Error(`Fatigue player ${playerId} is not registered.`);
-      const increment = calculateCommittedFatigueIncrementMilli({
-        matchKind: input.matchKind,
-        seconds,
-        stamina: modelBAbilityValues(player).stamina,
-        tactics: {
-          pace: offensePace,
-          offensiveFocus: 'BALANCED',
-          defensiveFocus,
-        },
-      });
-      fatigue[playerId] = clampFixedPoint((fatigue[playerId] ?? 0) + increment, 0, 100_000);
+      if (player === undefined) throw new Error(`Energy player ${playerId} is not registered.`);
+      const increment = calculateEnergyBaseCostMilli(
+        totalClockSeconds,
+        modelBAbilityValues(player).stamina,
+      );
+      energy[playerId] = clampFixedPoint((energy[playerId] ?? 0) + increment, 0, 100_000);
     }
   };
+  addBaseEnergyCost('HOME');
+  addBaseEnergyCost('AWAY');
 
+  // Bench recovery: players NOT in either lineup recover per elapsed time
+  const allCourtPlayerIds = new Set([
+    ...Object.values(lineups.home),
+    ...Object.values(lineups.away),
+  ]);
+  const allPlayers = [
+    ...playerById(input, 'HOME').values(),
+    ...playerById(input, 'AWAY').values(),
+  ];
+  for (const player of allPlayers) {
+    if (!allCourtPlayerIds.has(player.playerId)) {
+      const recovery = totalClockSeconds * MODEL_B_PARAMETER_REGISTRY.benchRecoveryPerSecondMilli;
+      energy[player.playerId] = clampFixedPoint(
+        (energy[player.playerId] ?? 0) - recovery,
+        0,
+        100_000,
+      );
+    }
+  }
+
+  // Process fouls and substitutions
   for (const payload of payloads) {
-    if (payload.type === 'CLOCK_ADVANCED') {
-      addCommittedSeconds('HOME', payload.seconds);
-      addCommittedSeconds('AWAY', payload.seconds);
-    } else if (payload.type === 'FOUL') {
+    if (payload.type === 'FOUL') {
       const side = payload.foulKind === 'OFFENSIVE' ? offenseSide : defenseSide;
       const key = sideKey(side);
       fouls[key].set(payload.playerId, (fouls[key].get(payload.playerId) ?? 0) + 1);
@@ -237,8 +253,11 @@ export function reduceModelBCommittedFatigue(
       lineups[key] = replaceLineupPlayer(lineups[key], payload.outPlayerId, payload.inPlayerId);
     }
   }
-  return fatigue;
+  return energy;
 }
+
+/** @deprecated v2.9 — use reduceModelBCommittedEnergy */
+export const reduceModelBCommittedFatigue = reduceModelBCommittedEnergy;
 
 function roleScore(player: MatchPlayerSnapshot, role: keyof MatchRoles): number {
   const ability = modelBAbilityValues(player);
@@ -546,7 +565,7 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
           (fouls.get(playerId) ?? session.input.rules.foulOutLimit) <
             session.input.rules.foulOutLimit &&
           anchor.fatigueMilliByPlayer[playerId]! >=
-            MODEL_B_PARAMETER_REGISTRY.neutralRotationFatigueThresholdMilli,
+            MODEL_B_PARAMETER_REGISTRY.neutralRotationEnergyThresholdMilli,
       )
       .sort(
         (left, right) =>
@@ -566,7 +585,7 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
         (player) =>
           anchor.fatigueMilliByPlayer[candidate.playerId]! -
             anchor.fatigueMilliByPlayer[player.playerId]! >=
-          MODEL_B_PARAMETER_REGISTRY.neutralRotationMinimumFatigueAdvantageMilli,
+          MODEL_B_PARAMETER_REGISTRY.neutralRotationMinimumEnergyAdvantageMilli,
       );
       if (replacement === undefined) continue;
       substitutions.push({
@@ -607,7 +626,7 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
   };
 }
 
-function averageEligibleFatigue(session: ModelBSession, side: MatchSide): number {
+function averageEligibleEnergy(session: ModelBSession, side: MatchSide): number {
   const anchor = currentAnchor(session);
   const ids = eligibleModelBLineupPlayerIds(anchor, side);
   if (ids.length === 0) return 100_000;
@@ -616,6 +635,9 @@ function averageEligibleFatigue(session: ModelBSession, side: MatchSide): number
     ids.length,
   );
 }
+
+/** @deprecated v2.9 — use averageEligibleEnergy */
+const averageEligibleFatigue = averageEligibleEnergy;
 
 function opponentPolicyEffect(
   input: Readonly<{
@@ -694,13 +716,13 @@ export function buildModelBOpponentPolicyPlan(
         side: opponentSide,
         reasonCode: 'TRAILING_EIGHT_ACCELERATE',
         parameter: 'PACE',
-        multiplierMilli: MODEL_B_PARAMETER_REGISTRY.paceLoadFactors.FAST,
+        multiplierMilli: MODEL_B_PARAMETER_REGISTRY.paceLoadFactors_LEGACY.FAST,
       }),
     );
   } else if (
     scoreMargin >= 8 ||
-    averageEligibleFatigue(session, opponentSide) >=
-      MODEL_B_PARAMETER_REGISTRY.neutralRotationFatigueThresholdMilli
+    averageEligibleEnergy(session, opponentSide) >=
+      MODEL_B_PARAMETER_REGISTRY.neutralRotationEnergyThresholdMilli
   ) {
     tactics.pace = 'SLOW';
     const reasonCode = scoreMargin >= 8 ? 'LEADING_EIGHT_SLOW' : 'HIGH_FATIGUE_SLOW';
@@ -711,7 +733,7 @@ export function buildModelBOpponentPolicyPlan(
         side: opponentSide,
         reasonCode,
         parameter: 'PACE',
-        multiplierMilli: MODEL_B_PARAMETER_REGISTRY.paceLoadFactors.SLOW,
+        multiplierMilli: MODEL_B_PARAMETER_REGISTRY.paceLoadFactors_LEGACY.SLOW,
       }),
     );
   }
@@ -774,7 +796,7 @@ export function buildModelBOpponentPolicyPlan(
     period: anchor.period,
     score: anchor.score,
     opponentSide,
-    opponentFatigueMilli: averageEligibleFatigue(session, opponentSide),
+    opponentEnergyMilli: averageEligibleEnergy(session, opponentSide),
     playerDefensiveFocus,
   });
   return {

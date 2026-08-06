@@ -53,7 +53,7 @@ function makePlayer(playerId: string, index: number, rating = 50): MatchPlayer {
       offensiveRebounding: 50,
     },
     archetypeTrait: null,
-    fatigueMilli: 10_000,
+    fatigueMilli: 0,
     chemistryMilli: 50_000,
   };
 }

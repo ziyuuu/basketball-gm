@@ -41,12 +41,14 @@ export type TraitContext =
   | 'PAINT_DEFENSE'
   | 'CONTESTED_REBOUND';
 
+/** @deprecated v2.9 fatigue sensitivity — superseded by energy tier system */
 export type FatigueSensitivity = 'FULL' | 'HALF' | 'NONE';
 
 export type EffectiveExecutionInput = Readonly<{
   player: ModelBExecutionPlayerSnapshot;
   blend: ModelBExecutionBlend;
-  fatigueSensitivity: FatigueSensitivity;
+  /** @deprecated v2.9 — unused in v2.10 energy pipeline */
+  fatigueSensitivity?: FatigueSensitivity;
   assignedPosition: MatchPosition | null;
   applyPositionMismatch: boolean;
   traitContext: TraitContext;
@@ -79,6 +81,99 @@ function isPhysicalSnapshot(
   player: ModelBExecutionPlayerSnapshot,
 ): player is ModelBPhysicalPlayerSnapshot {
   return 'snapshotVersion' in player && player.snapshotVersion === 'P02_MATCH_PLAYER_PHYSICAL_V1';
+}
+
+// ── v2.10 energy system ──
+
+/** Blend attribute keys that are exempt from energy tier penalty. */
+const ENERGY_PENALTY_EXEMPT_KEYS = new Set([
+  'stamina',
+  'height',
+  'absoluteWingspan',
+  'wingspanAdvantage',
+]);
+
+export function attributeReceivesEnergyPenalty(attribute: string): boolean {
+  return !ENERGY_PENALTY_EXEMPT_KEYS.has(attribute);
+}
+
+/**
+ * Compute the per-ability energy tier penalty from consumed energy.
+ *
+ * `energyMilli` is the consumed energy (0 = fresh, 100_000 = fully depleted).
+ * Returns a non-positive integer in milli.
+ */
+export function calculateEnergyTierPenaltyMilli(energyMilli: number): number {
+  assertMilli(energyMilli, 'energyMilli', 0, 100_000);
+  // consumed → remaining: 0 consumed = 100 remaining, 100_000 consumed = 0 remaining
+  const remainingPct = Math.floor(((100_000 - energyMilli) * 100) / 100_000);
+  const bands = MODEL_B_PARAMETER_REGISTRY.energyTierPenaltyMilli;
+  // Descending threshold check (80 → 70 → … → 0)
+  const thresholds = (Object.keys(bands) as unknown as number[])
+    .map(Number)
+    .sort((a, b) => b - a);
+  for (const threshold of thresholds) {
+    if (remainingPct >= threshold) {
+      return bands[threshold as unknown as keyof typeof bands]!;
+    }
+  }
+  // Fallback — should not be reached with valid thresholds
+  return bands[0]!;
+}
+
+/**
+ * Apply the energy tier penalty to a single ability value (in milli).
+ * Returns the penalized value clamped to 0..100_000.
+ */
+export function applyEnergyTierPenaltyToAbility(
+  abilityMilli: number,
+  energyMilli: number,
+  abilityName: string,
+): number {
+  if (!attributeReceivesEnergyPenalty(abilityName)) return abilityMilli;
+  const penalty = calculateEnergyTierPenaltyMilli(energyMilli);
+  return clampFixedPoint(abilityMilli + penalty, 0, 100_000);
+}
+
+/**
+ * Compute the stamina reduction factor for energy costs.
+ * `(1000 - stamina * pointsPerStamina) / 1000`
+ */
+function staminaEnergyFactorMilli(stamina: number): number {
+  return 1_000 - stamina * MODEL_B_PARAMETER_REGISTRY.staminaEnergyReductionMilliPerPoint;
+}
+
+/** Base on-court energy cost for `seconds` of elapsed time (before stamina). */
+export function calculateEnergyBaseCostMilli(seconds: number, stamina: number): number {
+  if (!Number.isSafeInteger(seconds) || seconds < 0) {
+    throw new Error('Energy base cost seconds must be a non-negative safe integer.');
+  }
+  if (!Number.isSafeInteger(stamina) || stamina < 0 || stamina > 100) {
+    throw new Error('Stamina must be an integer in 0..100.');
+  }
+  const rawCost = seconds * MODEL_B_PARAMETER_REGISTRY.energyBaseCostPerSecondMilli;
+  return roundHalfUp(rawCost * staminaEnergyFactorMilli(stamina), 1_000);
+}
+
+/**
+ * Behavior-participant energy cost for a single behavior instance.
+ * `intensity` selects the per-second cost; stamina reduces it.
+ */
+export function calculateBehaviorEnergyCostMilli(
+  intensity: string,
+  durationSeconds: number,
+  stamina: number,
+): number {
+  if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1) {
+    throw new Error('Behavior energy duration must be a positive safe integer.');
+  }
+  const intensityCosts = MODEL_B_PARAMETER_REGISTRY.energyIntensityCostMilli as Record<string, number>;
+  const perSecond = intensityCosts[intensity];
+  if (perSecond === undefined) {
+    throw new Error(`Unknown energy intensity: ${intensity}.`);
+  }
+  const rawCost = durationSeconds * perSecond;
+  return roundHalfUp(rawCost * staminaEnergyFactorMilli(stamina), 1_000);
 }
 
 export function normalizeHeightMilli(heightCm: number): number {
@@ -132,6 +227,7 @@ function legacyAttributeMilli(player: LegacyMatchPlayerSnapshot, attribute: stri
 export function calculateAbilityBlendMilli(
   player: ModelBExecutionPlayerSnapshot,
   blend: ModelBExecutionBlend,
+  energyPenaltyMilli?: number,
 ): number {
   const physical = isPhysicalSnapshot(player);
   const terms = physical
@@ -142,19 +238,25 @@ export function calculateAbilityBlendMilli(
   if (terms === undefined) {
     throw new Error(`Execution blend ${blend} is unavailable for the legacy snapshot variant.`);
   }
+  const penalty = energyPenaltyMilli ?? 0;
   let totalWeight = 0;
   let weightedMilli = 0;
   for (const [attribute, weightMilli] of terms) {
     totalWeight += weightMilli;
-    weightedMilli +=
-      (physical
-        ? physicalAttributeMilli(player, attribute)
-        : legacyAttributeMilli(player, attribute)) * weightMilli;
+    let attrMilli = physical
+      ? physicalAttributeMilli(player, attribute)
+      : legacyAttributeMilli(player, attribute);
+    // Apply energy tier penalty only to penalized attributes (not height/wingspan/stamina)
+    if (penalty !== 0 && attributeReceivesEnergyPenalty(attribute)) {
+      attrMilli = clampFixedPoint(attrMilli + penalty, 0, 100_000);
+    }
+    weightedMilli += attrMilli * weightMilli;
   }
   if (totalWeight !== 1_000) throw new Error(`Execution blend ${blend} must total 1000.`);
   return roundHalfUp(weightedMilli, 1_000);
 }
 
+/** @deprecated v2.9 — use calculateEnergyTierPenaltyMilli instead */
 export function calculateFatiguePenaltyMilli(
   fatigueMilli: number,
   sensitivity: FatigueSensitivity,
@@ -163,16 +265,21 @@ export function calculateFatiguePenaltyMilli(
   if (sensitivity === 'NONE') return 0;
   const excess = Math.max(
     0,
-    fatigueMilli - MODEL_B_PARAMETER_REGISTRY.fatiguePenaltyThresholdMilli,
+    fatigueMilli - MODEL_B_PARAMETER_REGISTRY.fatiguePenaltyThresholdMilli_LEGACY,
   );
   const fullPenalty = clampFixedPoint(
-    roundHalfUp(excess * MODEL_B_PARAMETER_REGISTRY.fatiguePenaltyRateMilli, 1_000),
+    roundHalfUp(excess * MODEL_B_PARAMETER_REGISTRY.fatiguePenaltyRateMilli_LEGACY, 1_000),
     0,
-    MODEL_B_PARAMETER_REGISTRY.fatiguePenaltyMaximumMilli,
+    MODEL_B_PARAMETER_REGISTRY.fatiguePenaltyMaximumMilli_LEGACY,
   );
   return sensitivity === 'HALF' ? roundHalfUp(fullPenalty, 2) : fullPenalty;
 }
 
+/**
+ * v2.10 Unified forced-mismatch penalty.
+ * Returns 0 if the player is at their primary position; otherwise a single [CALIBRATE] penalty.
+ * secondaryPosition has no product semantics and is ignored.
+ */
 export function calculatePositionModifierMilli(
   player: ModelBExecutionPlayerSnapshot,
   assignedPosition: MatchPosition | null,
@@ -185,9 +292,7 @@ export function calculatePositionModifierMilli(
   ) {
     return 0;
   }
-  return assignedPosition === player.secondaryPosition
-    ? MODEL_B_PARAMETER_REGISTRY.secondaryPositionPenaltyMilli
-    : MODEL_B_PARAMETER_REGISTRY.otherPositionPenaltyMilli;
+  return MODEL_B_PARAMETER_REGISTRY.forcedMismatchPenaltyMilli;
 }
 
 const TRAIT_CONTEXT = Object.freeze({
@@ -254,19 +359,21 @@ export function calculateOffensiveAttemptFactorMilli(
   return MODEL_B_PARAMETER_REGISTRY.offensiveFocusAttemptFactors[tactics.offensiveFocus][zone];
 }
 
+/** @deprecated v2.9 — tactical load no longer multiplies base energy cost */
 export function calculateTacticalLoadFactorMilli(tactics: MatchTactics): number {
   const combined = roundHalfUp(
-    MODEL_B_PARAMETER_REGISTRY.paceLoadFactors[tactics.pace] *
-      MODEL_B_PARAMETER_REGISTRY.defenseLoadFactors[tactics.defensiveFocus],
+    MODEL_B_PARAMETER_REGISTRY.paceLoadFactors_LEGACY[tactics.pace] *
+      MODEL_B_PARAMETER_REGISTRY.defenseLoadFactors_LEGACY[tactics.defensiveFocus],
     1_000,
   );
   return clampFixedPoint(
     combined,
-    MODEL_B_PARAMETER_REGISTRY.tacticalLoadMinimumMilli,
-    MODEL_B_PARAMETER_REGISTRY.tacticalLoadMaximumMilli,
+    MODEL_B_PARAMETER_REGISTRY.tacticalLoadMinimumMilli_LEGACY,
+    MODEL_B_PARAMETER_REGISTRY.tacticalLoadMaximumMilli_LEGACY,
   );
 }
 
+/** @deprecated v2.9 — use calculateEnergyBaseCostMilli + calculateBehaviorEnergyCostMilli instead */
 export function calculateCommittedFatigueIncrementMilli(
   input: Readonly<{
     matchKind: MatchInput['matchKind'];
@@ -282,7 +389,7 @@ export function calculateCommittedFatigueIncrementMilli(
     throw new Error('Stamina must be an integer in 0..100.');
   }
   const staminaFactorMilli =
-    1_000 - input.stamina * MODEL_B_PARAMETER_REGISTRY.staminaLoadReductionMilliPerPoint;
+    1_000 - input.stamina * MODEL_B_PARAMETER_REGISTRY.staminaLoadReductionMilliPerPoint_LEGACY;
   const numerator =
     MODEL_B_PARAMETER_REGISTRY.loadByMatchKind[input.matchKind] *
     input.seconds *
@@ -295,18 +402,23 @@ export function calculateEffectiveExecutionStages(
   input: EffectiveExecutionInput,
 ): EffectiveExecutionStages {
   assertMilli(input.chemistryModifierMilli, 'chemistryModifierMilli');
-  const abilityBlendMilli = calculateAbilityBlendMilli(input.player, input.blend);
-  const fatiguePenaltyMilli = calculateFatiguePenaltyMilli(
-    input.player.fatigueMilli,
-    input.fatigueSensitivity,
+  // Energy tier penalty: derived from consumed energy (fatigueMilli field is now energy consumed)
+  const energyMilli = input.player.fatigueMilli;
+  const energyTierPenaltyMilli = calculateEnergyTierPenaltyMilli(energyMilli);
+  // Blend with per-ability energy penalty (height/wingspan/stamina terms unaffected)
+  const abilityBlendMilli = calculateAbilityBlendMilli(
+    input.player,
+    input.blend,
+    energyTierPenaltyMilli,
   );
-  const afterFatigueMilli = abilityBlendMilli - fatiguePenaltyMilli;
+  const afterEnergyTierMilli = abilityBlendMilli;
+  // Position modifier (unified forced mismatch, secondaryPosition ignored)
   const positionModifierMilli = calculatePositionModifierMilli(
     input.player,
     input.assignedPosition,
     input.applyPositionMismatch,
   );
-  const afterPositionMilli = afterFatigueMilli + positionModifierMilli;
+  const afterPositionMilli = afterEnergyTierMilli + positionModifierMilli;
   const traitModifierMilli = calculateTraitModifierMilli(input.player, input.traitContext);
   const afterTraitMilli = afterPositionMilli + traitModifierMilli;
   const chemistryModifierMilli = input.applyChemistry ? input.chemistryModifierMilli : 0;
@@ -314,8 +426,8 @@ export function calculateEffectiveExecutionStages(
   const tacticalModifierMilli = capTacticalModifierMilli(input.tacticalModifierMilli);
   return Object.freeze({
     abilityBlendMilli,
-    fatiguePenaltyMilli,
-    afterFatigueMilli,
+    fatiguePenaltyMilli: energyTierPenaltyMilli,
+    afterFatigueMilli: afterEnergyTierMilli,
     positionModifierMilli,
     afterPositionMilli,
     traitModifierMilli,

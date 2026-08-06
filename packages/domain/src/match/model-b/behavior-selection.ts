@@ -2,7 +2,9 @@ import { compareUtf16CodeUnits, roundHalfUp } from '../../core/index.js';
 import { keyedDrawInt, type MatchDrawKey } from '../keyed-rng.js';
 import type { MatchAnchor, MatchInput } from '../schemas.js';
 import {
+  applyEnergyTierPenaltyToAbility,
   calculateAbilityBlendMilli,
+  calculateEnergyTierPenaltyMilli,
   modelBAbilityValues,
   stableSortPlayersById,
   type MatchPlayerSnapshot,
@@ -516,12 +518,24 @@ export function selectModelBActor(
 
 export function selectModelBDoubleTeamActors(
   candidates: readonly MatchPlayerSnapshot[],
+  energyMilliByPlayerId?: Readonly<Record<string, number>>,
 ): readonly [MatchPlayerSnapshot, MatchPlayerSnapshot] | null {
   if (candidates.length < 2) return null;
+  const energy = energyMilliByPlayerId ?? {};
   const ordered = [...candidates].sort(
-    (left, right) =>
-      modelBAbilityValues(right).interiorDefense - modelBAbilityValues(left).interiorDefense ||
-      compareUtf16CodeUnits(left.playerId, right.playerId),
+    (left, right) => {
+      const leftInterior = applyEnergyTierPenaltyToAbility(
+        modelBAbilityValues(left).interiorDefense * 1_000,
+        energy[left.playerId] ?? 0,
+        'interiorDefense',
+      );
+      const rightInterior = applyEnergyTierPenaltyToAbility(
+        modelBAbilityValues(right).interiorDefense * 1_000,
+        energy[right.playerId] ?? 0,
+        'interiorDefense',
+      );
+      return rightInterior - leftInterior || compareUtf16CodeUnits(left.playerId, right.playerId);
+    },
   );
   return Object.freeze([ordered[0]!, ordered[1]!] as const);
 }
@@ -557,6 +571,7 @@ function deterministicDutyCandidate(
     excludedPlayerIds?: readonly string[];
     executionBlend: 'BLOCK' | 'PASS_INTERCEPTION';
     modifier: 'blockCandidateModifierMilli' | 'passInterceptionCandidateModifierMilli';
+    energyMilliByPlayerId?: Readonly<Record<string, number>>;
   }>,
 ): MatchPlayerSnapshot | null {
   const lineupIds = new Set(Object.values(input.currentLineup));
@@ -565,11 +580,14 @@ function deterministicDutyCandidate(
     ({ playerId }) => lineupIds.has(playerId) && !excludedIds.has(playerId),
   );
   if (candidates.length === 0) return null;
+  const energy = input.energyMilliByPlayerId ?? {};
   return [...candidates].sort((left, right) => {
     const score = (player: MatchPlayerSnapshot): number => {
       const slot = deriveModelBDefensiveSlot(input.currentLineup, player.playerId);
+      const energyMilli = energy[player.playerId] ?? 0;
+      const energyPenalty = calculateEnergyTierPenaltyMilli(energyMilli);
       return (
-        calculateAbilityBlendMilli(player, input.executionBlend) +
+        calculateAbilityBlendMilli(player, input.executionBlend, energyPenalty) +
         MODEL_B_DEFENSIVE_DUTY_REGISTRY[slot][input.modifier]
       );
     };
@@ -582,6 +600,7 @@ export function deriveModelBBlockHelpCandidate(
     currentLineup: ModelBLineup;
     candidates: readonly MatchPlayerSnapshot[];
     directDefenderId: string;
+    energyMilliByPlayerId?: Readonly<Record<string, number>>;
   }>,
 ): MatchPlayerSnapshot | null {
   deriveModelBDefensiveSlot(input.currentLineup, input.directDefenderId);
@@ -597,6 +616,7 @@ export function deriveModelBPassInterceptionCandidate(
   input: Readonly<{
     currentLineup: ModelBLineup;
     candidates: readonly MatchPlayerSnapshot[];
+    energyMilliByPlayerId?: Readonly<Record<string, number>>;
   }>,
 ): MatchPlayerSnapshot | null {
   return deterministicDutyCandidate({

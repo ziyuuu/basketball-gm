@@ -480,6 +480,7 @@ export function buildModelBPassResolution(
   const stealCandidate = deriveModelBPassInterceptionCandidate({
     currentLineup: anchor.lineups[defenseSide === 'HOME' ? 'home' : 'away'],
     candidates: defenseTeam.players.filter(({ playerId }) => eligibleIds.has(playerId)),
+    energyMilliByPlayerId: anchor.fatigueMilliByPlayer,
   });
   if (stealCandidate === null) {
     throw new Error('A PASS resolution requires one eligible interception candidate.');

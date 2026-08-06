@@ -177,8 +177,8 @@ describe('P02-003 B1 frozen registries', () => {
       expect(new Set(scenario.seeds).size).toBe(64);
     }
     expect(MODEL_B_RULES_CONTENT_HASH).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(MODEL_B_REGISTRY_VERSION).toBe('p02-003-model-b-v2.9-r1-final');
-    expect(MODEL_B_RULES_VERSION).toBe('p02-003-v2.9-r1-final');
+    expect(MODEL_B_REGISTRY_VERSION).toBe('p02-003-model-b-v2.10-energy-r1');
+    expect(MODEL_B_RULES_VERSION).toBe('p02-003-v2.10-energy-r1');
     expect(MODEL_B_RULES_CONTENT_HASH).not.toBe(MODEL_B_LEGACY_RULES_CONTENT_HASH);
     expect(MODEL_B_LEGACY_RULES_CONTENT_HASH).toBe(
       'sha256:55b865f3f28dcdde0aead21d249e44e53d0d76b0106c6d11b7fa686f6c49efc2',
@@ -200,17 +200,17 @@ describe('P02-003 B1 frozen registries', () => {
 });
 
 describe('P02-003 B1 fixed calculation pipeline', () => {
-  it('applies blend, fatigue, position, trait, chemistry and capped tactics once in order', () => {
+  it('applies blend, energy tier, position, trait, chemistry and capped tactics once in order', () => {
+    // 50_000 consumed → floor(50) → band 50 → -15_000 energy tier penalty
     const subject = player('pipeline', {
       primaryPosition: 'PG',
       secondaryPosition: 'SG',
       archetypeTrait: 'STEADY_HANDLER',
-      fatigueMilli: 80_000,
+      fatigueMilli: 50_000,
     });
     const stages = calculateEffectiveExecutionStages({
       player: subject,
       blend: 'BALL_SECURITY',
-      fatigueSensitivity: 'FULL',
       assignedPosition: 'SG',
       applyPositionMismatch: true,
       traitContext: 'BALL_SECURITY',
@@ -218,18 +218,21 @@ describe('P02-003 B1 fixed calculation pipeline', () => {
       applyChemistry: true,
       tacticalModifierMilli: 20_000,
     });
+    // BALL_SECURITY = ballHandling 500 + playmaking 300 + tacticalUnderstanding 200
+    // All abilities at 50 → 50_000 each. With -15_000 energy penalty: 35_000 each.
+    // Blend = (35*500 + 35*300 + 35*200)/1000 = 35_000.
     expect(stages).toEqual({
-      abilityBlendMilli: 50_000,
-      fatiguePenaltyMilli: 10_000,
-      afterFatigueMilli: 40_000,
-      positionModifierMilli: -3_000,
-      afterPositionMilli: 37_000,
+      abilityBlendMilli: 35_000,
+      fatiguePenaltyMilli: -15_000,
+      afterFatigueMilli: 35_000,
+      positionModifierMilli: -8_000,
+      afterPositionMilli: 27_000,
       traitModifierMilli: 6_000,
-      afterTraitMilli: 43_000,
+      afterTraitMilli: 33_000,
       chemistryModifierMilli: 2_000,
-      afterChemistryMilli: 45_000,
+      afterChemistryMilli: 35_000,
       tacticalModifierMilli: 6_000,
-      finalExecutionMilli: 51_000,
+      finalExecutionMilli: 41_000,
     });
   });
 
