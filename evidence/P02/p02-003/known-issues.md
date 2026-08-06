@@ -59,8 +59,18 @@ All energy consumption/recovery/penalty values are initial runnable defaults, no
 2. SUBSTITUTION events lost forced mismatch reason codes; `forced: false` hardcoded for neutral rotation
 3. `canRestorePrimaryPosition()` required unauthorized 10,000 energy advantage gate
 
-## r5 Remediation (2026-08-06)
+## r5 Remediation (2026-08-06, REJECTED)
 
-All 3 blockers fixed. Non-selectable behaviors call `addBehaviorEnergyCost` directly at runtime. SUBSTITUTION events carry `reasonCode` (nullable). `canRestorePrimaryPosition` uses only frozen legality constraints.
+All 3 blockers addressed but incomplete per independent review. Non-selectable behaviors called `addBehaviorEnergyCost` but used wrong durations and missing target roles. SUBSTITUTION events carried `reasonCode` but `forced: false` still hardcoded for mismatches. `canRestorePrimaryPosition` energy gate removed but cross-boundary oscillation emerged.
 
 **Known r5 limitation**: SCRIMMAGE (6-player) match kind may exceed 10,000 steps in rare cases due to increased substitution activity from energy gate removal. OFFICIAL and FRIENDLY match kinds terminate normally. Tests use OFFICIAL fixtures for runToEnd verification.
+
+## r6 Remediation (2026-08-07)
+
+All r5 gaps closed:
+- Duration clamping (FT uses `freeThrows.attempted`; PASSTOV/BALLDESTROY/PUTBACK clamped to registry max)
+- Target role completion (BOXOUT MODERATE target; ORB/DRB LIGHT targets)
+- `forced: true` for FORCED_MISMATCH_NO_PRIMARY; foul-out mismatch detection
+- Cross-boundary oscillation prevented via `neutralRotationEnergyThresholdMilli` guard in `canRestorePrimaryPosition` (existing frozen parameter, no new threshold)
+
+The SCRIMMAGE step-bound issue should be resolved by the oscillation prevention fix.

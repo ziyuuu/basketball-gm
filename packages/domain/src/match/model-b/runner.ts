@@ -1902,8 +1902,9 @@ function resolvePass(
     behaviorId === 'CREATIVE_PASS',
   );
   if (resultIndexes !== null) {
-    runtime.addBehaviorEnergyCost('PASSTOV', duration, [handlerBefore.playerId], 'actor');
-    runtime.addBehaviorEnergyCost('PASSTOV', duration, [defender.playerId], 'target');
+    const passtovDuration = Math.min(duration, behavior('PASSTOV').maximumSeconds);
+    runtime.addBehaviorEnergyCost('PASSTOV', passtovDuration, [handlerBefore.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('PASSTOV', passtovDuration, [defender.playerId], 'target');
     runtime.addActionTrace({
       behaviorId,
       clockIndex,
@@ -2025,8 +2026,14 @@ function resolveCreation(
   }
   const turnoverIndexes = resolveTurnover(runtime, handlerBefore, defender);
   if (turnoverIndexes !== null) {
-    runtime.addBehaviorEnergyCost('BALLDESTROY', duration, [handlerBefore.playerId], 'actor');
-    runtime.addBehaviorEnergyCost('BALLDESTROY', duration, [defender.playerId], 'target');
+    const destroyDuration = Math.min(duration, behavior('BALLDESTROY').maximumSeconds);
+    runtime.addBehaviorEnergyCost(
+      'BALLDESTROY',
+      destroyDuration,
+      [handlerBefore.playerId],
+      'actor',
+    );
+    runtime.addBehaviorEnergyCost('BALLDESTROY', destroyDuration, [defender.playerId], 'target');
     runtime.addActionTrace({
       behaviorId,
       clockIndex,
@@ -2238,8 +2245,9 @@ function resolveShot(
   const isPutback =
     runtime.initialHandlerReason === 'OFFENSIVE_REBOUND_CARRY' && runtime.passSequence === 0;
   if (isPutback) {
-    runtime.addBehaviorEnergyCost('PUTBACK', duration, [shooter.playerId], 'actor');
-    runtime.addBehaviorEnergyCost('PUTBACK', duration, [defender.playerId], 'target');
+    const putbackDuration = Math.min(duration, behavior('PUTBACK').maximumSeconds);
+    runtime.addBehaviorEnergyCost('PUTBACK', putbackDuration, [shooter.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('PUTBACK', putbackDuration, [defender.playerId], 'target');
   }
   const [offenseBlend, defenseBlend] = zoneBlends(zone);
   const opportunityQualityMilli = runtime.opportunityQuality();
@@ -2424,9 +2432,9 @@ function resolveShot(
     });
     runtime.payloads.push(...freeThrows.eventPayloads);
     resultIndexes.push(...freeThrows.eventPayloads.map((_, index) => ftStart + index));
-    // Charge FT energy for actual free throw attempts
+    // Charge FT energy proportional to actual free throw attempts (1–3)
     if (freeThrows.attempted > 0) {
-      runtime.addBehaviorEnergyCost('FT', 3, [shooter.playerId], 'actor');
+      runtime.addBehaviorEnergyCost('FT', freeThrows.attempted, [shooter.playerId], 'actor');
     }
     if (!freeThrows.lastAttemptMade && runtime.periodRemaining > 0) {
       const flight = runtime.appendPostReleaseClock(Math.min(1, runtime.periodRemaining));
@@ -2439,11 +2447,16 @@ function resolveShot(
         // Rebound energy accounting for FT miss
         if (rebound.kind === 'OFFENSIVE') {
           runtime.addBehaviorEnergyCost('ORB', 1, [rebound.rebounderId], 'actor');
+          runtime.addBehaviorEnergyCost('ORB', 1, [defender.playerId], 'target');
         } else {
           runtime.addBehaviorEnergyCost('DRB', 1, [rebound.rebounderId], 'actor');
+          runtime.addBehaviorEnergyCost('DRB', 1, [shooter.playerId], 'target');
         }
         if (rebound.boxerId !== null) {
           runtime.addBehaviorEnergyCost('BOXOUT', 1, [rebound.boxerId], 'actor');
+          const boxerIsOffensive = runtime.offense.some((p) => p.playerId === rebound.boxerId);
+          const boxoutTarget = boxerIsOffensive ? defender.playerId : shooter.playerId;
+          runtime.addBehaviorEnergyCost('BOXOUT', 1, [boxoutTarget], 'target');
         }
         runtime.addActionTrace({
           behaviorId,
@@ -2519,11 +2532,16 @@ function resolveShot(
   const isBlkLoose = shot.blockOccurred && rebound.kind === 'OFFENSIVE';
   if (rebound.kind === 'OFFENSIVE') {
     runtime.addBehaviorEnergyCost('ORB', 1, [rebound.rebounderId], 'actor');
+    runtime.addBehaviorEnergyCost('ORB', 1, [defender.playerId], 'target');
   } else {
     runtime.addBehaviorEnergyCost('DRB', 1, [rebound.rebounderId], 'actor');
+    runtime.addBehaviorEnergyCost('DRB', 1, [shooter.playerId], 'target');
   }
   if (rebound.boxerId !== null) {
     runtime.addBehaviorEnergyCost('BOXOUT', 1, [rebound.boxerId], 'actor');
+    const boxerIsOffensiveReg = runtime.offense.some((p) => p.playerId === rebound.boxerId);
+    const boxoutTargetReg = boxerIsOffensiveReg ? defender.playerId : shooter.playerId;
+    runtime.addBehaviorEnergyCost('BOXOUT', 1, [boxoutTargetReg], 'target');
   }
   if (isBlkLoose) {
     runtime.addBehaviorEnergyCost('BLKLOOSE', 1, [rebound.rebounderId], 'actor');

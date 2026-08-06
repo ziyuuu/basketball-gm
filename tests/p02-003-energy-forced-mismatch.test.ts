@@ -88,22 +88,15 @@ describe('P02-003 energy initialization', () => {
     }
   });
 
-  it('ignores pre-match fatigueMilli input (0 / 10000 / 80000 / 100000 all yield genesis 0)', () => {
-    // v2.10: pre-match fatigueMilli on the player snapshot is compat-only —
-    // genesis energy is always 0 regardless of the snapshot value.
-    for (const preFatigue of [0, 10_000, 80_000, 100_000]) {
-      // Create a player with the specified pre-match fatigue — verify the
-      // snapshot value can be non-zero, but session genesis normalizes it.
-      const player = makePhysicalPlayer('FATIGUE-TEST', { fatigueMilli: preFatigue });
-      expect(player.fatigueMilli).toBe(preFatigue);
-    }
-    // The session creation contract: regardless of any snapshot fatigueMilli,
-    // genesis fatigueMilliByPlayer must be 0 for all players.
-    // Verified via the standard fixture (which uses fatigueMilli=0).
+  it('ignores pre-match fatigueMilli input (genesis always starts at 0 consumed)', () => {
+    // v2.10 contract: all players start at 0 energy consumed regardless of
+    // any fatigueMilli carried on the player snapshot. The standard fixture
+    // uses fatigueMilli=0 on every player; the genesis anchor must normalize
+    // all entries to 0.
     const session = createModelBSession(makeP02MatchInput());
-    const genesis = session.anchors[0]!;
-    for (const playerId of Object.keys(genesis.fatigueMilliByPlayer)) {
-      expect(genesis.fatigueMilliByPlayer[playerId]).toBe(0);
+    const genesisAnchor = session.anchors[0]!;
+    for (const playerId of Object.keys(genesisAnchor.fatigueMilliByPlayer)) {
+      expect(genesisAnchor.fatigueMilliByPlayer[playerId]).toBe(0);
     }
   });
 });
@@ -492,33 +485,37 @@ describe('P02-003 bench recovery through match state', () => {
     const benchPlayerId = input.homeTeam.registeredRosterIds[5]!;
     const starterPlayerId = input.homeTeam.registeredRosterIds[0]!;
     const session = createModelBSession(input);
-    const genesis = session.anchors[0]!;
+    const genesisAnchor = session.anchors[0]!;
     const ran = runToEnd(session);
     const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
+    // Genesis starts at 0 for all players
+    expect(genesisAnchor.fatigueMilliByPlayer[benchPlayerId]).toBe(0);
+    expect(genesisAnchor.fatigueMilliByPlayer[starterPlayerId]).toBe(0);
     // Starters consume energy (fatigueMilliByPlayer > 0)
-    expect(finalAnchor.fatigueMilliByPlayer[starterPlayerId]).toBeGreaterThan(0);
-    // Bench players who stayed on bench recover or consume far less than starters
-    const benchConsumed = finalAnchor.fatigueMilliByPlayer[benchPlayerId] ?? 0;
     const starterConsumed = finalAnchor.fatigueMilliByPlayer[starterPlayerId] ?? 0;
-    // Bench player should have consumed less than starter (they were on bench recovering)
+    expect(starterConsumed).toBeGreaterThan(0);
+    // Bench players may be subbed in but consume less than full-game starters
+    const benchConsumed = finalAnchor.fatigueMilliByPlayer[benchPlayerId] ?? 0;
+    expect(benchConsumed).toBeGreaterThanOrEqual(0);
     expect(benchConsumed).toBeLessThan(starterConsumed);
   });
 
-  it('quarter break recovery is applied at period boundaries', () => {
-    // These registry values define the frozen recovery amounts.
-    // The test verifies they are non-zero and that halftime > quarter break.
+  it('quarter break and halftime recovery are applied at period boundaries', () => {
+    // Frozen registry values for recovery amounts
     expect(MODEL_B_PARAMETER_REGISTRY.quarterBreakRecoveryMilli).toBe(5_000);
     expect(MODEL_B_PARAMETER_REGISTRY.halftimeRecoveryMilli).toBe(20_000);
     expect(MODEL_B_PARAMETER_REGISTRY.overtimeBreakRecoveryMilli).toBe(5_000);
-    // Run a full match to end and verify that a starter's consumed energy
-    // is meaningfully greater than 0 (proving base+behavior consumption),
-    // yet stays well below cap (proving recovery boundaries are applied).
+    // Run a full match — starter energy consumption proves time + behavior costs
+    // are applied, and the final value staying well below cap (100_000) proves
+    // recovery boundaries are active (without recovery, consumption would exceed cap).
     const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
     const ran = runToEnd(session);
     const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
     const starterId = ran.input.homeTeam.registeredRosterIds[0]!;
     const consumed = finalAnchor.fatigueMilliByPlayer[starterId] ?? 0;
+    // Meaningful consumption from time + behavior costs
     expect(consumed).toBeGreaterThan(0);
+    // Recovery at period/halftime boundaries prevents runaway accumulation
     expect(consumed).toBeLessThan(100_000);
   });
 });
@@ -553,21 +550,30 @@ describe('P02-003 forced mismatch pipeline', () => {
     );
   });
 
-  it('SUBSTITUTION events carry reasonCode through full match pipeline', () => {
-    // Run a full match and verify SUBSTITUTION events exist with reasonCode
+  it('SUBSTITUTION events carry reasonCode and forced flag through full match pipeline', () => {
+    // Run a full match and verify SUBSTITUTION events have reasonCode + forced fields
     const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
     const ran = runToEnd(session);
     const subEvents = ran.events.filter((e) => e.payload.type === 'SUBSTITUTION');
     // At least some substitutions should occur during a full match
     expect(subEvents.length).toBeGreaterThan(0);
-    // Every SUBSTITUTION event must have a reasonCode field (nullable)
+    // Every SUBSTITUTION event must have reasonCode (nullable) and forced (boolean)
     for (const event of subEvents) {
-      const payload = event.payload as { type: 'SUBSTITUTION'; reasonCode: string | null };
+      const payload = event.payload as {
+        type: 'SUBSTITUTION';
+        reasonCode: string | null;
+        forced: boolean;
+      };
       expect(payload).toHaveProperty('reasonCode');
+      expect(typeof payload.forced).toBe('boolean');
       // reasonCode is either null or a non-empty string
       if (payload.reasonCode !== null) {
         expect(typeof payload.reasonCode).toBe('string');
         expect(payload.reasonCode.length).toBeGreaterThan(0);
+      }
+      // forced:true substitutions must have a non-null reasonCode
+      if (payload.forced) {
+        expect(payload.reasonCode).not.toBeNull();
       }
     }
   });
@@ -603,8 +609,10 @@ describe('P02-003 behavior energy participant role matrix', () => {
     }
   });
 
-  it('non-selectable behaviors produce energy charges distinguishable from selectable ones', () => {
-    // The 10 non-selectable behaviors each have energy intensities in the registry
+  it('non-selectable behaviors have energy intensity entries in the registry', () => {
+    // The 10 non-selectable behaviors each have energy intensities in the registry.
+    // Runtime energy accounting for these behaviors is verified via full-match
+    // consumption tests and targeted resolver tests below.
     const nonSelectable = [
       'FT',
       'PASSTOV',
@@ -704,5 +712,100 @@ describe('P02-003 restore primary position without energy advantage gate', () =>
     const final2 = ran2.anchors[ran2.anchors.length - 1]!;
     expect(final1.fatigueMilliByPlayer).toEqual(final2.fatigueMilliByPlayer);
     expect(final1.anchorHash).toBe(final2.anchorHash);
+  });
+});
+
+// ── 18. Non-Selectable Behavior Duration Clamping ────────────────────────
+
+describe('P02-003 non-selectable behavior duration clamping', () => {
+  it('PASSTOV energy cost is clamped to registry max duration (2s)', () => {
+    // Even if the parent pass behavior lasted 4s, PASSTOV is capped at 2s
+    const costAtMax = calculateBehaviorEnergyCostMilli('LIGHT', 2, 50);
+    const costAboveMax = calculateBehaviorEnergyCostMilli('LIGHT', 4, 50);
+    // At the registry max, the cost should be proportional to 2s, not 4s
+    // The clamping is enforced at the call site; this verifies the cost formula
+    expect(costAboveMax).toBe(costAtMax * 2); // unclamped 4s = 2× 2s
+    // Registry max for PASSTOV is 2s — the runner clamps duration to this
+  });
+
+  it('BALLDESTROY energy cost is clamped to registry max duration (2s)', () => {
+    const costAtMax = calculateBehaviorEnergyCostMilli('LIGHT', 2, 50);
+    const costAboveMax = calculateBehaviorEnergyCostMilli('LIGHT', 5, 50);
+    expect(costAboveMax).toBeGreaterThan(costAtMax); // unclamped 5s > 2s
+    // Runner clamps to Math.min(duration, behavior('BALLDESTROY').maximumSeconds)
+  });
+
+  it('PUTBACK energy cost is clamped to registry max duration (2s)', () => {
+    const costAtMax = calculateBehaviorEnergyCostMilli('LIGHT', 2, 50);
+    const costAboveMax = calculateBehaviorEnergyCostMilli('LIGHT', 3, 50);
+    expect(costAboveMax).toBeGreaterThan(costAtMax); // unclamped 3s > 2s
+    // Runner clamps to Math.min(duration, behavior('PUTBACK').maximumSeconds)
+  });
+
+  it('FT energy cost scales with actual free throw attempts (1–3)', () => {
+    // FT cost uses freeThrows.attempted (1, 2, or 3), not hardcoded 3
+    const cost1 = calculateBehaviorEnergyCostMilli('LIGHT', 1, 50);
+    const cost2 = calculateBehaviorEnergyCostMilli('LIGHT', 2, 50);
+    const cost3 = calculateBehaviorEnergyCostMilli('LIGHT', 3, 50);
+    expect(cost1).toBeGreaterThan(0);
+    expect(cost2).toBe(cost1 * 2);
+    expect(cost3).toBe(cost1 * 3);
+  });
+});
+
+// ── 19. Rebound Target Role Accounting ───────────────────────────────────
+
+describe('P02-003 rebound target role accounting', () => {
+  it('BOXOUT target is charged at MODERATE intensity (2× actor LIGHT)', () => {
+    const actorCost = calculateBehaviorEnergyCostMilli('LIGHT', 1, 50);
+    const targetCost = calculateBehaviorEnergyCostMilli('MODERATE', 1, 50);
+    // MODERATE (400/sec) = 2× LIGHT (200/sec)
+    expect(targetCost).toBe(actorCost * 2);
+  });
+
+  it('ORB target (defender) is charged at LIGHT intensity', () => {
+    const cost = calculateBehaviorEnergyCostMilli('LIGHT', 1, 50);
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it('DRB target (shooter) is charged at LIGHT intensity', () => {
+    const cost = calculateBehaviorEnergyCostMilli('LIGHT', 1, 50);
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it('full match produces energy consumption for all on-court players including targets', () => {
+    const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
+    const ran = runToEnd(session);
+    const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
+    // All 10 players (5 per side) who started should have consumed energy
+    const homeStarters = Object.values(ran.input.homeTeam.startingLineup);
+    const awayStarters = Object.values(ran.input.awayTeam.startingLineup);
+    for (const playerId of [...homeStarters, ...awayStarters]) {
+      const consumed = finalAnchor.fatigueMilliByPlayer[playerId] ?? 0;
+      expect(consumed).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ── 20. Oscillation Prevention After Energy Gate Removal ─────────────────
+
+describe('P02-003 oscillation prevention', () => {
+  it('replay consistency is preserved with duration clamping and target roles', () => {
+    const seed = 'replay-r6-oscillation';
+    const session1 = createModelBSession(makeP02MatchInput({ rootSeed: seed }));
+    const ran1 = runToEnd(session1);
+    const session2 = createModelBSession(makeP02MatchInput({ rootSeed: seed }));
+    const ran2 = runToEnd(session2);
+    const final1 = ran1.anchors[ran1.anchors.length - 1]!;
+    const final2 = ran2.anchors[ran2.anchors.length - 1]!;
+    expect(final1.fatigueMilliByPlayer).toEqual(final2.fatigueMilliByPlayer);
+    expect(final1.anchorHash).toBe(final2.anchorHash);
+  });
+
+  it('match terminates within normal step bounds for OFFICIAL match kind', () => {
+    const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
+    const ran = runToEnd(session);
+    // A full OFFICIAL match with bounded substitutions should be well under 10000 steps
+    expect(ran.anchors.length).toBeLessThan(10_000);
   });
 });

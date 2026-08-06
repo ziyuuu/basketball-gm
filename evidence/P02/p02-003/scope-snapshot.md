@@ -27,10 +27,25 @@ manifest 35/35 and passed CI #103.
 - Gate B, PR Ready, merge, P02-004, UI/Site/deploy, saves and unrelated architecture changes.
 
 Status: B1R–B6R remain accepted for the contract reviewed at that time; B7 delivery is closed at
-`bf03e215…`. r4 rejected by independent review (3 runtime blockers). r5 addresses all blockers.
+`bf03e215…`. r4 rejected by independent review (3 runtime blockers). r5 rejected (CI #127 FAILURE, 3 blockers incomplete). r6 addresses all remaining gaps.
 B8 / Gate B / PR Ready / merge / P02-004 remain blocked.
 
-## 2026-08-06 v2.10-energy-r5 (from r4 rejection)
+## 2026-08-07 v2.10-energy-r6 (from r5 rejection)
+
+**Parent**: `94ed9c584427f9ad85fd0a493a7f521299d0e094` (r5, REJECTED)
+**Branch**: `task/p02-003-headless-model-b`
+**PR**: #15 Draft
+
+### r6 Scope
+
+- Duration clamping (FT uses `freeThrows.attempted`; PASSTOV/BALLDESTROY/PUTBACK clamped to registry max)
+- Target role completion (BOXOUT MODERATE target; ORB/DRB LIGHT targets)
+- Forced semantics fix (`forced: true` for FORCED_MISMATCH_NO_PRIMARY; foul-out mismatch detection)
+- Cross-boundary oscillation prevention (energy threshold guard using existing frozen parameter)
+- Test improvements (101 tests: 94 energy + 7 B6)
+- Evidence sync and manifest regeneration
+
+## 2026-08-06 v2.10-energy-r5 (from r4 rejection, REJECTED)
 
 **Parent**: `7d91a296f38ff68b70ada40298d88df68a88159f` (r4 Review Candidate, REJECTED)
 **Branch**: `task/p02-003-headless-model-b`

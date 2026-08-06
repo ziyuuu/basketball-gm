@@ -15,6 +15,6 @@ create an ordinary revert of the successor only while retaining B1R–B6R and th
 record; do not force-push, reset, or restore a pre-v6 runner.
 
 The 2026-08-06 contract amendment is a later ordinary documentation successor. Its implementation
-has been delivered through v2.10-energy-r1 through r5. r4 was rejected by independent review.
-r5 addresses all 3 blockers. To roll back, revert the amendment and all dependent
+has been delivered through v2.10-energy-r1 through r6. r4 and r5 were rejected by independent review.
+r6 addresses all remaining gaps. To roll back, revert the amendment and all dependent
 implementation commits together in a normal revert PR.

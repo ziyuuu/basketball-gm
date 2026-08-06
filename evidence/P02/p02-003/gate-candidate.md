@@ -153,43 +153,58 @@ The v2.10-energy-r3 Candidate `904dc2e` was returned to development with 5 hard 
 2. SUBSTITUTION events lose forced mismatch reason code during commit
 3. `canRestorePrimaryPosition()` requires unauthorized 10,000 energy advantage gate
 
-### 2026-08-06 v2.10-energy-r5 Remediation
+### 2026-08-06 v2.10-energy-r5 Remediation (REJECTED)
 
 #### Identity
 
-- **Candidate**: (to be filled after final commit)
-- **Tree**: (to be filled after final commit)
+- **Candidate**: `94ed9c584427f9ad85fd0a493a7f521299d0e094`
+- **Tree**: `1880235cf53ae32ced59189b2d575a239cb20a7f`
 - **Parent**: `7d91a296f38ff68b70ada40298d88df68a88159f`
 - **Branch**: `task/p02-003-headless-model-b`
 - **Draft PR**: [#15](https://github.com/ziyuuu/basketball-gm/pull/15)
+- **CI**: run [31111958133](https://github.com/ziyuuu/basketball-gm/actions/runs/31111958133), FAILURE
 
-#### r5 Fixes
+#### r5 Fixes (all incomplete per review)
 
-1. **Non-selectable behavior energy wiring**: 10 non-selectable behaviors (FT, PASSTOV, BALLDESTROY, PUTBACK, BLK, FOUL, ORB, DRB, BOXOUT, BLKLOOSE) now call `addBehaviorEnergyCost` directly at their runtime occurrence points in runner.ts, bypassing `addActionTrace`. Actor/target roles use actual participants per the 44-item registry contract.
+(see r4 review section above for the 3 blockers)
 
-2. **Forced mismatch reason persistence**: SUBSTITUTION event schema extended with `reasonCode: z.string().nullable()`. Both foul-out and neutral-rotation payload builders now preserve `reasonCode` from the substitution plan. `forced` flag corrected from hardcoded `false` to `substitution.forced` in neutral rotation.
+#### Review Conclusion
 
-3. **Energy advantage gate removal**: `canRestorePrimaryPosition()` no longer requires `minimumEnergyAdvantageMilli` (10,000) energy advantage. All frozen legality constraints preserved (on roster, on bench, not fouled out, no duplicates, legal at boundary). Added `restoredPositions` guard to prevent immediate outgoing-loop ping-pong with fresh restores.
+`REQUEST CHANGES / NOT ACCEPTED` — CI FAILURE. Duration billing still incorrect, `forced: false` still hardcoded for mismatches, cross-boundary oscillation not prevented. Evidence formatting and manifest stale.
 
-4. **Test fixes**: Pre-match fatigue test simplified; starter mismatch test uses C-primary player (no duplicate); bench recovery and match-clock tests use real game state assertions; added SUBSTITUTION reasonCode pipeline test, non-selectable intensity verification, full-match energy consumption test, and replay consistency test.
+### 2026-08-07 v2.10-energy-r6 Remediation
+
+#### Identity
+
+- **Candidate**: (PR #15 HEAD after r6 push — see CI)
+- **Parent**: `94ed9c584427f9ad85fd0a493a7f521299d0e094`
+- **Branch**: `task/p02-003-headless-model-b`
+- **Draft PR**: [#15](https://github.com/ziyuuu/basketball-gm/pull/15)
+
+#### r6 Fixes
+
+1. **Duration clamping**: FT uses `freeThrows.attempted` (not hardcoded 3); PASSTOV/BALLDESTROY/PUTBACK clamped to registry max via `Math.min(duration, behavior(id).maximumSeconds)`.
+2. **Target role completion**: BOXOUT target (MODERATE) charged to opponent being boxed out; ORB/DRB target (LIGHT) charged to defender/shooter respectively.
+3. **Forced semantics**: Neutral rotation sets `forced: true` when `reasonCode === FORCED_MISMATCH_NO_PRIMARY`; foul-out path detects mismatch and uses `FORCED_MISMATCH_NO_PRIMARY` instead of `FOUL_OUT_FORCED_REPLACEMENT` when replacement is non-primary; eligibility assertion updated.
+4. **Cross-boundary oscillation prevention**: `canRestorePrimaryPosition` checks bench player energy is below `neutralRotationEnergyThresholdMilli` (60,000) before restoring — uses existing frozen parameter, no new threshold.
+5. **Test improvements**: 101 tests (94 energy + 7 B6). Added duration clamping, target role, oscillation prevention, and replay consistency tests. Fixed pre-match fatigue, bench recovery, and forced mismatch pipeline assertions.
 
 #### Modified Files
 
-Runtime: `runner.ts`, `state-rules.ts`, `schemas.ts`
-Tests: `p02-003-energy-forced-mismatch.test.ts`, `p02-003-b6-state-rules.test.ts`
-Evidence: (pending final commit)
+Runtime: `runner.ts`, `state-rules.ts`
+Tests: `p02-003-energy-forced-mismatch.test.ts`
+Evidence: `behavior-causality-matrix.md`, `gate-candidate.md`, `known-issues.md`, `requirements-traceability.md`, `rollback.md`, `scope-snapshot.md`, `single-match-energy-contract-amendment.md`, `manifest.sha256`
 
 ### Status
 
 ```text
-P02-003 v2.10-energy-r4:
-REQUEST CHANGES / NOT ACCEPTED
-
-INDEPENDENT REVIEW: COMPLETED — FAIL
-(see r4 review above)
-
 P02-003 v2.10-energy-r5:
+REQUEST CHANGES / NOT ACCEPTED
+CI #127: FAILURE
+
+P02-003 v2.10-energy-r6:
 IMPLEMENTED / SELF-VERIFIED
+CI PENDING
 
 INDEPENDENT REVIEW: REQUESTED
 B8 / GATE B / PR READY / MERGE / P02-004: BLOCKED

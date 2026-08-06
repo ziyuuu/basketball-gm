@@ -371,7 +371,11 @@ export function assertModelBTransitionPlayerEligibility(
       if (incomingFouls >= foulOutLimit) {
         throw new Error('A fouled-out player cannot enter the match.');
       }
-      if (payload.forced && outgoingFouls < foulOutLimit) {
+      if (
+        payload.forced &&
+        outgoingFouls < foulOutLimit &&
+        payload.reasonCode !== MODEL_B_FORCED_MISMATCH_REASON_CODES.NO_PRIMARY_CANDIDATE
+      ) {
         throw new Error('A forced Model B substitution requires a fouled-out player.');
       }
       lineups[key] = replaceLineupPlayer(lineups[key], payload.outPlayerId, payload.inPlayerId);
@@ -486,6 +490,15 @@ function canRestorePrimaryPosition(
   );
   if (benchPrimary === undefined) return null;
 
+  // Prevent cross-boundary oscillation: only restore a primary-position player
+  // whose consumed energy is below the neutral rotation fatigue threshold.
+  // A player above this threshold would be immediately flagged as an outgoing
+  // fatigue candidate on the next boundary, causing a restore→sub-out cycle.
+  const benchEnergy = anchor.fatigueMilliByPlayer[benchPrimary.playerId] ?? 0;
+  if (benchEnergy >= MODEL_B_PARAMETER_REGISTRY.neutralRotationEnergyThresholdMilli) {
+    return null;
+  }
+
   return benchPrimary.playerId;
 }
 
@@ -555,13 +568,16 @@ export function buildModelBFoulOutBoundaryPlan(session: ModelBSession): ModelBFo
         workingLineups[key],
       )[0];
       if (replacement === undefined) continue;
+      const isMismatch = replacement.primaryPosition !== position;
       substitutions.push({
         side,
         position,
         outPlayerId,
         inPlayerId: replacement.playerId,
         forced: true,
-        reasonCode: 'FOUL_OUT_FORCED_REPLACEMENT',
+        reasonCode: isMismatch
+          ? MODEL_B_FORCED_MISMATCH_REASON_CODES.NO_PRIMARY_CANDIDATE
+          : 'FOUL_OUT_FORCED_REPLACEMENT',
       });
       workingLineups[key] = replaceLineupPlayer(
         workingLineups[key],
@@ -689,7 +705,7 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
         position: candidate.position,
         outPlayerId: candidate.playerId,
         inPlayerId: result.player.playerId,
-        forced: false,
+        forced: result.reasonCode === MODEL_B_FORCED_MISMATCH_REASON_CODES.NO_PRIMARY_CANDIDATE,
         reasonCode: result.reasonCode,
       });
       workingLineups[key] = replaceLineupPlayer(
