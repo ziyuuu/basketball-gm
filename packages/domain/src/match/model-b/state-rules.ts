@@ -198,8 +198,10 @@ export function reduceModelBCommittedEnergy(
 
   // Total clock seconds in this transition
   const totalClockSeconds = payloads
-    .filter((p): p is Extract<MatchEvent['payload'], { type: 'CLOCK_ADVANCED' }> =>
-      p.type === 'CLOCK_ADVANCED')
+    .filter(
+      (p): p is Extract<MatchEvent['payload'], { type: 'CLOCK_ADVANCED' }> =>
+        p.type === 'CLOCK_ADVANCED',
+    )
     .reduce((sum, p) => sum + p.seconds, 0);
 
   // Base energy cost for all 10 on-court eligible players (per stamina)
@@ -227,10 +229,7 @@ export function reduceModelBCommittedEnergy(
     ...Object.values(lineups.home),
     ...Object.values(lineups.away),
   ]);
-  const allPlayers = [
-    ...playerById(input, 'HOME').values(),
-    ...playerById(input, 'AWAY').values(),
-  ];
+  const allPlayers = [...playerById(input, 'HOME').values(), ...playerById(input, 'AWAY').values()];
   for (const player of allPlayers) {
     if (!allCourtPlayerIds.has(player.playerId)) {
       const recovery = totalClockSeconds * MODEL_B_PARAMETER_REGISTRY.benchRecoveryPerSecondMilli;
@@ -637,6 +636,7 @@ function averageEligibleEnergy(session: ModelBSession, side: MatchSide): number 
 }
 
 /** @deprecated v2.9 — use averageEligibleEnergy */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const averageEligibleFatigue = averageEligibleEnergy;
 
 function opponentPolicyEffect(

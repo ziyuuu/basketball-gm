@@ -77,12 +77,14 @@ energy or forced-mismatch runtime behavior has already been implemented.
 ## 2026-08-06 定点实现修复 Implementation Record
 
 **Status**: IMPLEMENTED / SELF-VERIFIED
-**Candidate**: (pending commit)
-**Branch**: 	ask/p02-003-headless-model-b
+**Candidate**: (to be filled after commit — v2.10-energy-r2)
+**Original implementation**: acf9bbb58d6177a561d3a790bcbe530bcf06975f
+**Branch**: `task/p02-003-headless-model-b`
 
 ### What was implemented
-1. Energy initialization: all players start at 0 consumed (atigueMilliByPlayer = 0)
-2. pre-match atigueMilli is compat-only; {0,10000,80000,100000} all yield genesis 0
+
+1. Energy initialization: all players start at 0 consumed (fatigueMilliByPlayer = 0)
+2. pre-match fatigueMilli is compat-only; {0,10000,80000,100000} all yield genesis 0
 3. Energy consumption: base (seconds × 100 per stamina factor) + behavior (intensity × duration × stamina factor)
 4. Energy tier penalty: 7 bands (0/30/40/50/60/70/80 remaining → 0/-5/-10/-15/-20/-25/-30 penalty)
 5. 10 abilities penalized (finishing through strength); stamina/height/wingspan exempt
@@ -97,23 +99,25 @@ energy or forced-mismatch runtime behavior has already been implemented.
 14. step/runToEnd/replay identity preserved for non-B7 paths
 
 ### [CALIBRATE] Initial Parameters
-| Parameter | Value |
-|---|---|
-| energyBaseCostPerSecondMilli | 100 |
-| staminaEnergyReductionMilliPerPoint | 3 |
-| energyIntensityCostMilli LIGHT | 200 |
-| energyIntensityCostMilli MODERATE | 400 |
-| energyIntensityCostMilli HEAVY | 800 |
-| benchRecoveryPerSecondMilli | 50 |
-| quarterBreakRecoveryMilli | 5_000 |
-| halftimeRecoveryMilli | 20_000 |
-| overtimeBreakRecoveryMilli | 5_000 |
-| timeoutRecoveryMilli | 0 |
-| neutralRotationEnergyThresholdMilli | 60_000 |
+
+| Parameter                                  | Value  |
+| ------------------------------------------ | ------ |
+| energyBaseCostPerSecondMilli               | 100    |
+| staminaEnergyReductionMilliPerPoint        | 3      |
+| energyIntensityCostMilli LIGHT             | 200    |
+| energyIntensityCostMilli MODERATE          | 400    |
+| energyIntensityCostMilli HEAVY             | 800    |
+| benchRecoveryPerSecondMilli                | 50     |
+| quarterBreakRecoveryMilli                  | 5_000  |
+| halftimeRecoveryMilli                      | 20_000 |
+| overtimeBreakRecoveryMilli                 | 5_000  |
+| timeoutRecoveryMilli                       | 0      |
+| neutralRotationEnergyThresholdMilli        | 60_000 |
 | neutralRotationMinimumEnergyAdvantageMilli | 10_000 |
-| forcedMismatchPenaltyMilli | -8_000 |
+| forcedMismatchPenaltyMilli                 | -8_000 |
 
 ### Test Coverage
+
 - Energy initialization (4 pre-match fatigue inputs) ✓
 - Energy tier penalty exact boundaries (80→0 through 0→−30) ✓
 - Attribute exemptions (stamina/height/wingspan not penalized) ✓

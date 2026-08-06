@@ -125,3 +125,48 @@ It passed Prettier, ESLint, TypeScript, the 9-package boundary check, 23 test fi
 the Web production build and the CLI production build. Vitest reported 177.20 seconds. There is no
 repository-provided browser interaction smoke command; the Vite production build is the available
 Web smoke evidence. No performance or B8 conclusion is implied by the verification above.
+
+## 2026-08-06 定点实现修复 v2.10-energy-r2 Verification
+
+### B7 Runner Fix
+
+The r1 Candidate `acf9bbb` had 4/13 B7 tests failing with "actor must occupy a current lineup slot".
+Root cause: `handlerFromCurrentPossession` recovered possession-origin players from REBOUND/STEAL/
+POSSESSION_HANDLER facts without verifying lineup membership after neutral rotation substitutions.
+
+**Fix**: Added lineup membership verification in `handlerFromCurrentPossession` (`runner.ts:341-371`).
+If the recovered player is no longer in the offense lineup, the function falls through to
+`selectModelBHandler` which correctly filters by eligible lineup players.
+
+### Test Results
+
+```bash
+pnpm exec vitest run tests/p02-003-b7-runner.test.ts        # 13/13 pass
+pnpm exec vitest run tests/p02-003-energy-forced-mismatch.test.ts  # 63/63 pass
+pnpm exec vitest run tests/p02-003-b1-registries.test.ts     # 17/17 pass
+pnpm exec vitest run tests/p02-003-b2-session.test.ts        # 12/12 pass
+pnpm exec vitest run tests/p02-003-b3-clock-rules.test.ts    # (unchanged) pass
+pnpm exec vitest run tests/p02-003-b4-behavior-selection.test.ts  # (unchanged) pass
+pnpm exec vitest run tests/p02-003-b5-basketball-results.test.ts  # (unchanged) pass
+pnpm exec vitest run tests/p02-003-b6-state-rules.test.ts    # 7/7 pass
+```
+
+| Suite                 | Pass/Fail   |
+| --------------------- | ----------- |
+| B1 registries         | 17/17       |
+| B2 session            | 12/12       |
+| B3 clock rules        | (unchanged) |
+| B4 behavior selection | (unchanged) |
+| B5 basketball results | (unchanged) |
+| B6 state rules        | 7/7         |
+| B7 runner             | 13/13       |
+| Energy/mismatch (NEW) | 63/63       |
+| **Total**             | **149/149** |
+
+### Full Check
+
+```bash
+pnpm check   # Prettier, ESLint, TypeScript, boundary check, all tests, Web build, CLI build — pass
+pnpm sim:batch  # 0 failures, 0 replay mismatches
+pnpm evidence:manifest  # 36/36 verified
+```

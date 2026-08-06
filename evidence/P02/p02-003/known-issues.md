@@ -2,9 +2,9 @@
 
 - Prior rejected Candidates remain rejected history. `bf03e215…` closes the B7 runner/evidence
   delivery blockers with manifest 35/35 and CI #103 success.
-- The 2026-08-06 single-match energy and forced-mismatch contract is not yet implemented. Current
-  code still consumes pre-match fatigue, continuous penalty, pace/defense time-load multipliers,
-  secondary-position fit and active off-position behavior from the superseded contract.
+- The 2026-08-06 single-match energy and forced-mismatch contract has been implemented
+  (v2.10-energy-r2). All [CALIBRATE] parameters use initial runnable defaults; they are not
+  final balance values.
 - The amendment preserves P02-002 Schema names and the accepted clock/Event/Fact/RNG/replay identity
   contracts, but requires targeted Model B implementation changes before calibration.
 - B8 remains a hard blocker. Current evidence contains no 10,000-match/60-second performance claim,
@@ -18,19 +18,18 @@
 
 ## 2026-08-06 定点实现修复 Known Issues
 
-### B7 Golden Vector Recalibration (4 tests)
-The energy system changes match trajectories: consumption rates, tier penalties, and rotation timing differ. B7 runner tests that exercise full-match step/runToEnd/replay equality need updated golden vectors.
-- SCRIMMAGE identity test
-- FRIENDLY identity test
-- OFFICIAL identity test
-- Tampered transcript test
+### B7 Golden Vector Recalibration (resolved in r2)
 
-**Root cause**: Neutral rotation now triggers at different times (60k energy threshold vs old 70k fatigue threshold) and energy accumulates at different rates. This causes different substitution decisions, which shifts handlers and creates "actor must occupy a current lineup slot" errors in replay.
+The energy system changes match trajectories: consumption rates, tier penalties, and rotation timing differ from v2.9. B7 runner tests that exercise full-match step/runToEnd/replay equality initially failed (4/13 in r1, 0/13 in r2).
 
-**Fix**: B8 recalibration pass must re-run and re-capture B7 golden vectors.
+**Root cause (r1)**: `handlerFromCurrentPossession` recovered possession-origin players from REBOUND/STEAL/POSSESSION_HANDLER facts without verifying they were still in the current lineup. Neutral rotation with the new energy thresholds could bench these players at DEAD_BALL boundaries, and the next segment would select an invalid handler.
+
+**Fix (r2)**: Added lineup membership verification in `handlerFromCurrentPossession` (runner.ts:341-371). If the recovered player is no longer in the offense lineup, the function falls through to `selectModelBHandler` which correctly filters by eligible lineup players. This is a defensive invariant fix — it doesn't change rotation logic, energy thresholds, or any game mechanics.
 
 ### [CALIBRATE] Parameters
+
 All energy consumption/recovery/penalty values are initial runnable defaults, not final balance. These must be calibrated through the directional-scenario process:
+
 - energyBaseCostPerSecondMilli: 100
 - energyIntensityCostMilli: {LIGHT:200, MODERATE:400, HEAVY:800}
 - benchRecoveryPerSecondMilli: 50
@@ -40,6 +39,7 @@ All energy consumption/recovery/penalty values are initial runnable defaults, no
 - forcedMismatchPenaltyMilli: -8000
 
 ### Not Implemented (by design)
+
 - No stamina effect on recovery speed or energy cap
 - No fatigue-protection mode, no low-energy behavior avoidance
 - No secondary position, position proficiency, or cross-position adaptation

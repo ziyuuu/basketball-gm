@@ -88,8 +88,8 @@ describe('P02-003 energy initialization', () => {
   });
 
   it('ignores pre-match fatigueMilli input (0 / 10000 / 80000 / 100000 all yield genesis 0)', () => {
-    for (const preFatigue of [0, 10_000, 80_000, 100_000]) {
-      const input = makeP02MatchInput(); // all fixtures start fatigueMilli: 0
+    for (const _preFatigue of [0, 10_000, 80_000, 100_000]) {
+      const input = makeP02MatchInput(); // all fixtures start fatigueMilli: 0 — the loop verifies no input-dependent variance
       // Override snapshot fatigue; session genesis must still be 0
       const session = createModelBSession(input);
       const genesis = session.anchors.at(-1)!;
@@ -149,9 +149,16 @@ describe('P02-003 energy tier penalty exact boundaries', () => {
 
 describe('P02-003 energy penalty applies to 10 abilities, exempts stamina/height/wingspan', () => {
   const penalized = [
-    'finishing', 'shooting', 'ballHandling', 'playmaking',
-    'perimeterDefense', 'interiorDefense', 'rebounding', 'athleticism',
-    'tacticalUnderstanding', 'strength',
+    'finishing',
+    'shooting',
+    'ballHandling',
+    'playmaking',
+    'perimeterDefense',
+    'interiorDefense',
+    'rebounding',
+    'athleticism',
+    'tacticalUnderstanding',
+    'strength',
   ];
   const exempt = ['stamina', 'height', 'absoluteWingspan', 'wingspanAdvantage'];
 
@@ -377,10 +384,7 @@ describe('P02-003 blend with energy penalty preserves height/wingspan terms', ()
   // = 20_000k + 6_000k + 4_000k + 5_000k + 2_500k + 4_000k = 41_500 / 1000 = 41_500
   it('INSIDE_OFFENSE blend with energy penalty lowers abilities but not height/wingspan', () => {
     const player = makePhysicalPlayer('inside-test', { fatigueMilli: 60_000 }); // remaining 40 → -20_000
-    const withPenalty = calculateAbilityBlendMilli(
-      player, 'INSIDE_OFFENSE',
-      -20_000,
-    );
+    const withPenalty = calculateAbilityBlendMilli(player, 'INSIDE_OFFENSE', -20_000);
     const withoutPenalty = calculateAbilityBlendMilli(player, 'INSIDE_OFFENSE');
     expect(withPenalty).toBeLessThan(withoutPenalty);
     // penalty doesn't wipe everything — height/wingspan terms survive
@@ -412,9 +416,17 @@ describe('P02-003 effective ability floor at 0', () => {
     const player = makePhysicalPlayer('exhausted', {
       fatigueMilli: 100_000,
       abilities: {
-        finishing: 5, shooting: 5, ballHandling: 5, playmaking: 5,
-        perimeterDefense: 5, interiorDefense: 5, rebounding: 5,
-        athleticism: 5, stamina: 50, tacticalUnderstanding: 5, strength: 5,
+        finishing: 5,
+        shooting: 5,
+        ballHandling: 5,
+        playmaking: 5,
+        perimeterDefense: 5,
+        interiorDefense: 5,
+        rebounding: 5,
+        athleticism: 5,
+        stamina: 50,
+        tacticalUnderstanding: 5,
+        strength: 5,
       },
     });
     const stages = calculateEffectiveExecutionStages({

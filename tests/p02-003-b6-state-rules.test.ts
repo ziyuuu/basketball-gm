@@ -11,7 +11,6 @@ import {
   buildModelBFoulOutBoundaryPlan,
   buildModelBNeutralRotationPlan,
   buildModelBOpponentPolicyPlan,
-  calculateCommittedFatigueIncrementMilli,
   calculateEnergyBaseCostMilli,
   calculateModelBShortHandedDefensePenaltyMilli,
   commitModelBAutomatedDecision,
@@ -146,7 +145,7 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
     const stamina = 50; // fixture default
     const expectedIncrement = calculateEnergyBaseCostMilli(10, stamina);
     // Bench recovery: 10s * 50 milli/s = 500
-    const expectedBenchRecovery = 10 * 50; // benchRecoveryPerSecondMilli
+    const _expectedBenchRecovery = 10 * 50; // benchRecoveryPerSecondMilli
 
     expect(nextAnchor.fatigueMilliByPlayer[offenseId]).toBe(expectedIncrement);
     expect(nextAnchor.fatigueMilliByPlayer[defenseId]).toBe(expectedIncrement);
@@ -487,7 +486,7 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
         expect(
           currentPlayer(rotated, substitution.side, substitution.inPlayerId).snapshotVersion,
         ).toBe('P02_MATCH_PLAYER_PHYSICAL_V1');
-    }
+      }
       expect(() => assertModelBSessionInvariants(rotated)).not.toThrow();
     }
 

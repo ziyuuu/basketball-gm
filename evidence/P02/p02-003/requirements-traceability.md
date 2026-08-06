@@ -19,5 +19,5 @@ The original v2.9 B1-B6 implementation remains the implementation base. R1 chang
 contracts; Canonical V2, fixed-point primitives, keyed RNG, the generic effect algorithm, Legacy
 P01, Behavior/EventType/drawKind closed sets, and unrelated v2.9 clauses remain unchanged.
 
-B8, Gate B, PR Ready, merge and P02-004 remain blocked pending implementation and independent review
+B8, Gate B, PR Ready, merge and P02-004 remain blocked pending independent review
 of the 2026-08-06 targeted contract amendment.

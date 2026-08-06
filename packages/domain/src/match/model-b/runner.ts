@@ -343,14 +343,26 @@ function handlerFromCurrentPossession(
   offense: readonly MatchPlayerSnapshot[],
 ): MatchPlayerSnapshot {
   const anchor = current(session);
+  const offenseLineup = anchor.lineups[sideKey(anchor.possession.side)];
+  const isInLineup = (playerId: string): boolean => Object.values(offenseLineup).includes(playerId);
   const previousControlEvent = [...session.events]
     .reverse()
     .find(({ payload }) => payload.type !== 'POSSESSION_ENDED');
   if (previousControlEvent?.payload.type === 'REBOUND') {
-    return player(session, anchor.possession.side, previousControlEvent.payload.playerId);
+    const candidate = player(
+      session,
+      anchor.possession.side,
+      previousControlEvent.payload.playerId,
+    );
+    if (isInLineup(candidate.playerId)) return candidate;
   }
   if (previousControlEvent?.payload.type === 'STEAL') {
-    return player(session, anchor.possession.side, previousControlEvent.payload.playerId);
+    const candidate = player(
+      session,
+      anchor.possession.side,
+      previousControlEvent.payload.playerId,
+    );
+    if (isInLineup(candidate.playerId)) return candidate;
   }
   for (const fact of [...session.facts].reverse()) {
     const payload = fact.payload as Record<string, unknown>;
@@ -360,7 +372,8 @@ function handlerFromCurrentPossession(
       payload.possessionIndex === anchor.possession.possessionIndex &&
       typeof payload.handlerPlayerId === 'string'
     ) {
-      return player(session, anchor.possession.side, payload.handlerPlayerId);
+      const candidate = player(session, anchor.possession.side, payload.handlerPlayerId);
+      if (isInLineup(candidate.playerId)) return candidate;
     }
   }
   return selectModelBHandler({
@@ -849,10 +862,8 @@ class SegmentRuntime {
     if (intensity === undefined) return;
     for (const playerId of participantPlayerIds) {
       // Find the player snapshot to get stamina
-      const player = [...this.offense, ...this.defense].find(p => p.playerId === playerId);
-      const stamina = player !== undefined
-        ? modelBAbilityValues(player).stamina
-        : 50; // fallback
+      const player = [...this.offense, ...this.defense].find((p) => p.playerId === playerId);
+      const stamina = player !== undefined ? modelBAbilityValues(player).stamina : 50; // fallback
       const cost = calculateBehaviorEnergyCostMilli(intensity, durationSeconds, stamina);
       this.behaviorEnergyDeltaByPlayer[playerId] =
         (this.behaviorEnergyDeltaByPlayer[playerId] ?? 0) + cost;
@@ -962,11 +973,7 @@ class SegmentRuntime {
     // Accumulate behavior-participant energy cost
     const participants = new Set([...input.actorIds, ...input.targetIds]);
     if (participants.size > 0) {
-      this.addBehaviorEnergyCost(
-        input.behaviorId,
-        input.durationSeconds,
-        [...participants],
-      );
+      this.addBehaviorEnergyCost(input.behaviorId, input.durationSeconds, [...participants]);
     }
   }
 

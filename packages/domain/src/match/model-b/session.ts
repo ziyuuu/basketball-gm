@@ -701,7 +701,7 @@ export function commitModelBTransition(
     ],
     fatigueMilliByPlayer: (() => {
       // Base energy cost + bench recovery
-      let energy = reduceModelBCommittedEnergy(
+      const energy = reduceModelBCommittedEnergy(
         session.input,
         previousAnchor,
         draft.eventPayloads,
@@ -709,11 +709,7 @@ export function commitModelBTransition(
       // Behavior-participant energy costs
       if (draft.behaviorEnergyDeltaByPlayer) {
         for (const [playerId, delta] of Object.entries(draft.behaviorEnergyDeltaByPlayer)) {
-          energy[playerId] = clampFixedPoint(
-            (energy[playerId] ?? 0) + delta,
-            0,
-            100_000,
-          );
+          energy[playerId] = clampFixedPoint((energy[playerId] ?? 0) + delta, 0, 100_000);
         }
       }
       // Period-break recovery (applied once when period advances)
@@ -726,11 +722,7 @@ export function commitModelBTransition(
             ? MODEL_B_PARAMETER_REGISTRY.overtimeBreakRecoveryMilli
             : MODEL_B_PARAMETER_REGISTRY.quarterBreakRecoveryMilli;
         for (const playerId of Object.keys(energy)) {
-          energy[playerId] = clampFixedPoint(
-            (energy[playerId] ?? 0) - recovery,
-            0,
-            100_000,
-          );
+          energy[playerId] = clampFixedPoint((energy[playerId] ?? 0) - recovery, 0, 100_000);
         }
       }
       return energy;
