@@ -30,9 +30,10 @@ Status: B1R–B6R remain accepted for the contract reviewed at that time; B7 del
 `bf03e215…`. The later amendment requires targeted implementation remediation before B8. B8 /
 Gate B / PR Ready / merge / P02-004 remain blocked.
 
-## 2026-08-06 定点实现修复 (v2.10-energy-r1)
+## 2026-08-06 定点实现修复 (v2.10-energy-r2)
 
-**Candidate**: (to be filled after commit)
+**Candidate**: 50c3077918ca74806df4d6364744763c9d8c3377
+**Tree**: 9d2fedc4ea8bb8d11fdcdd5b23b8cd17bd92f43c
 **Parent**: aca6307974492efaccd636880fceab16aa42d5c5
 **Branch**: `task/p02-003-headless-model-b`
 **PR**: #15 Draft

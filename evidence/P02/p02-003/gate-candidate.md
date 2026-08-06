@@ -30,7 +30,8 @@ full `pnpm check` and independent review of that remediation.
 
 ### Identity
 
-- **Candidate**: (to be filled after commit)
+- **Candidate**: 50c3077918ca74806df4d6364744763c9d8c3377
+- **Tree**: 9d2fedc4ea8bb8d11fdcdd5b23b8cd17bd92f43c
 - **Parent**: aca6307974492efaccd636880fceab16aa42d5c5
 - **Branch**: `task/p02-003-headless-model-b`
 - **Draft PR**: [#15](https://github.com/ziyuuu/basketball-gm/pull/15)
