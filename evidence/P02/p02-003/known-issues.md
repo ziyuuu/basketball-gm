@@ -1,5 +1,25 @@
 # P02-003 Known Issues and Deferred Work after 2026-08-06 Amendment
 
+## 2026-08-07 scope correction
+
+The r4--r6 review cycle expanded P02-003 beyond its headless-kernel purpose. Owner authority now
+limits blockers according to
+`docs/design/P02-003/P02_003_SCOPE_CORRECTION_AND_GATE_B_DOWNGRADE.md`.
+
+The following are not P02-003 blockers:
+
+- exact ORB/DRB/BOXOUT target attribution for energy accounting;
+- a second substitution reason for foul-out plus forced mismatch;
+- product-level primary-position restoration, protection periods or assistant-rotation policy.
+
+The current `internal/test` neutral policy may retain its r6 threshold guard as an implementation
+detail if OFFICIAL, FRIENDLY and SCRIMMAGE terminate with legal lineups and deterministic replay.
+P02-006 owns the formal product policy and must not treat this guard as frozen gameplay.
+
+Candidate `3489a703…` remains rejected only as an exact SHA because CI #129 failed formatting. The
+scope-correction successor must pass formatting, full checks, batch, manifest and fresh CI before
+B8 resumes.
+
 - Prior rejected Candidates remain rejected history. `bf03e215…` closes the B7 runner/evidence
   delivery blockers with manifest 35/35 and CI #103 success.
 - The 2026-08-06 single-match energy and forced-mismatch contract has been implemented
@@ -65,12 +85,14 @@ All 3 blockers addressed but incomplete per independent review. Non-selectable b
 
 **Known r5 limitation**: SCRIMMAGE (6-player) match kind may exceed 10,000 steps in rare cases due to increased substitution activity from energy gate removal. OFFICIAL and FRIENDLY match kinds terminate normally. Tests use OFFICIAL fixtures for runToEnd verification.
 
-## r6 Remediation (2026-08-07)
+## r6 Remediation (2026-08-07, exact SHA rejected by CI)
 
-All r5 gaps closed:
+Runtime changes retained under the corrected P02-003 scope:
+
 - Duration clamping (FT uses `freeThrows.attempted`; PASSTOV/BALLDESTROY/PUTBACK clamped to registry max)
 - Target role completion (BOXOUT MODERATE target; ORB/DRB LIGHT targets)
 - `forced: true` for FORCED_MISMATCH_NO_PRIMARY; foul-out mismatch detection
 - Cross-boundary oscillation prevented via `neutralRotationEnergyThresholdMilli` guard in `canRestorePrimaryPosition` (existing frozen parameter, no new threshold)
 
-The SCRIMMAGE step-bound issue should be resolved by the oscillation prevention fix.
+The SCRIMMAGE step-bound issue is a blocker only if the real runner fails to terminate or exceeds
+the existing watchdog. Exact restoration timing is deferred to P02-006.

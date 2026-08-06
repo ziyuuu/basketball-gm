@@ -10,6 +10,13 @@
 - Development-plan SHA-256: `ff4f6177476968277e17c26f906f2a6490d6be3d383d4596ae67ca03dada1244`
 - Draft PR: #15
 
+## 2026-08-07 Gate-scope correction
+
+`docs/design/P02-003/P02_003_SCOPE_CORRECTION_AND_GATE_B_DOWNGRADE.md` supersedes this record only
+for P02-003 acceptance granularity and blocker classification. It preserves the downstream product
+direction while deferring exact non-selectable targets and product rotation/restoration policy to
+P02-006.
+
 ## Prior B7 delivery closure
 
 The manifest-only Candidate `bf03e21584bbc9941fdf5cb6b1d2448bcd9ab4ba` was independently

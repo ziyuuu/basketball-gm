@@ -1,4 +1,4 @@
-# P02-003 B7 Closure and 2026-08-06 Contract-amendment Scope Snapshot
+# P02-003 B7 Closure, Energy Amendment and Gate-scope Correction Snapshot
 
 ## Authority
 
@@ -7,6 +7,7 @@
 | `P02-003_v2.9-R2_Sixth_Owner_Reaudit_Corrected_2026-08-05.md`                  | `e6deb02b55ca8dff23687fe56800f1a02bebc16366d265de1eaea2d375b81e97` | B7 observable runner rulings                           |
 | `P02-003_v2.9-r2-proposed_full_revision_v6.md`                                 | `29e045ded4e83372d1392946c6e7491665cbddf54e7fa5bd1d89a740bb3bfa68` | B7 frozen observable product contract                  |
 | `docs/design/P02-003/P02_SINGLE_MATCH_ENERGY_AND_FORCED_MISMATCH_AMENDMENT.md` | `4cea0864bb3211a767df350c1c3ba9bcf833b83683ab410608627b8b3501d41c` | Later Owner-frozen energy and forced-mismatch override |
+| `docs/design/P02-003/P02_003_SCOPE_CORRECTION_AND_GATE_B_DOWNGRADE.md`         | repository file identity                                           | P02-003 acceptance granularity and blocker downgrade   |
 
 The rejected B7 Candidate `b228ab9c1e46127ba663a01096fc8f365d5cf1f9` remains rejected
 history. The B7 delivery Candidate `bf03e21584bbc9941fdf5cb6b1d2448bcd9ab4ba` verified the P02
@@ -27,8 +28,28 @@ manifest 35/35 and passed CI #103.
 - Gate B, PR Ready, merge, P02-004, UI/Site/deploy, saves and unrelated architecture changes.
 
 Status: B1R–B6R remain accepted for the contract reviewed at that time; B7 delivery is closed at
-`bf03e215…`. r4 rejected by independent review (3 runtime blockers). r5 rejected (CI #127 FAILURE, 3 blockers incomplete). r6 addresses all remaining gaps.
-B8 / Gate B / PR Ready / merge / P02-004 remain blocked.
+`bf03e215…`. r4 and r5 remain rejected history. r6 exact SHA remains rejected because CI #129
+failed; its actor/target, dual-reason and restoration-policy review findings are downgraded by the
+2026-08-07 Owner decision. The correction successor must pass fresh CI before B8 resumes. Gate B,
+PR Ready, merge and P02-004 remain blocked.
+
+## 2026-08-07 Gate-scope correction
+
+Included:
+
+- Owner authority fixing P02-003 to observable headless-kernel acceptance;
+- documentation/evidence synchronization and formatting repair;
+- existing OFFICIAL/FRIENDLY/SCRIMMAGE termination and replay verification.
+- full local verification: 24 files / 349 tests, Web/CLI builds, batch 1,000/1,000 and manifest
+  36/36.
+
+Explicitly not required for P02-003:
+
+- unique basketball target selection for each non-selectable energy charge;
+- dual trigger/assignment reason fields on substitution events;
+- product-level restoration and assistant-rotation state machines.
+
+P02-006 retains ownership of formal lineup, restoration and assistant rotation semantics.
 
 ## 2026-08-07 v2.10-energy-r6 (from r5 rejection)
 

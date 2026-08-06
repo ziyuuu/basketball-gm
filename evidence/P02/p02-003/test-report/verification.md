@@ -1,5 +1,28 @@
 # P02-003 v2.9-R2 B7 Third-round Verification Report
 
+## 2026-08-07 scope-correction verification target
+
+The corrected Gate no longer treats exact non-selectable targets, dual substitution reasons or the
+internal neutral policy's restoration timing as P02-003 blockers. The correction successor still
+passes the real OFFICIAL/FRIENDLY/SCRIMMAGE runner and replay paths.
+
+Local verification on the scope-correction successor:
+
+- focused energy/B6/B7: 3 files, 114/114 tests;
+- complete Vitest: 24 files, 349/349 tests;
+- Prettier, ESLint, TypeScript and 9-package boundary check: pass;
+- Web Vite production build: pass;
+- CLI tsup production build: pass;
+- batch: 1,000/1,000, 0 failures, 10 replay samples, 0 replay mismatches, 0 calendar/operation-week
+  violations and 0 illegal terminal states;
+- P02 manifest: 36/36;
+- `git diff --check`: pass.
+
+The Work runner's `pnpm` launcher attempted an environment-owned dependency reinstall, so the
+local full check was executed as the exact component commands with the repository's installed
+binaries. Fresh GitHub CI remains authoritative for the literal `pnpm check` command. Historical
+r1--r6 counts below remain historical evidence only.
+
 This is development-thread verification for a local successor to rejected Candidate
 `97d6ed55dd31852ed7538b39bae3d55d57ae6e0b`. It is not independent Owner review, a B7 acceptance,
 or a Gate B decision. Historical commands below describe the earlier candidate only; this document

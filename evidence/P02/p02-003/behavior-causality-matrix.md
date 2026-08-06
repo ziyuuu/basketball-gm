@@ -1,5 +1,10 @@
 # P02-003 B7 Second-round Behavior Causality Matrix
 
+> 2026-08-07 scope note: this matrix remains useful implementation evidence, but exact per-behavior
+> actor/target energy attribution is no longer a P02-003 Gate blocker. Gate B uses the observable
+> aggregate energy, termination, legal-lineup and replay contract defined by
+> `P02_003_SCOPE_CORRECTION_AND_GATE_B_DOWNGRADE.md`.
+
 This matrix records the executable B7 runner chain, not registry visibility. Every row is observed
 through a real `ACTION_TRACE` sourced by its committed behavior `CLOCK_ADVANCED` event in
 `tests/p02-003-b7-runner.test.ts`. The trace test uses a complete legal match and requires the
@@ -62,20 +67,21 @@ included.
 These 10 behaviors are `RULE_RESULT` or `ATTRIBUTION_ONLY` — never selected via
 `selectableBehavior()`, never produce `ACTION_TRACE` Facts. Energy is charged via direct
 `runtime.addBehaviorEnergyCost()` calls at each runtime occurrence point in `runner.ts`.
-r6 completed target role accounting for ORB, DRB, and BOXOUT.
+r6 records target roles for ORB, DRB and BOXOUT. Those targets are deterministic implementation
+proxies for P02-003, not frozen product attribution semantics.
 
-| Behavior ID | Actor Role / Intensity | Target Role / Intensity | Runtime Accounting Path                                                              | Participants                                                      |
-| ----------- | ---------------------- | ----------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| FT          | LIGHT                  | LIGHT                   | `resolveShot` ~L2429, `freeThrows.attempted` as duration (1–3)                       | actor: shooter; target: (none — self-action)                      |
-| PASSTOV     | LIGHT                  | LIGHT                   | `resolvePass` ~L1904, duration clamped to registry max (2s)                          | actor: passer (handlerBefore); target: defender                   |
-| BALLDESTROY | LIGHT                  | LIGHT                   | `resolveCreation` ~L2022, duration clamped to registry max (2s)                      | actor: handlerBefore; target: defender                            |
-| PUTBACK     | LIGHT                  | LIGHT                   | `resolveShot` ~L2238, duration clamped to registry max (2s)                          | actor: shooter; target: defender                                  |
-| BLK         | LIGHT                  | LIGHT                   | `resolveShot` ~L2408, duration 1s                                                    | actor: blockCandidate; target: shooter                            |
-| FOUL        | LIGHT                  | LIGHT                   | 4 call sites: `resolveShot`(offensive+shooting), `resolveCreation`, `resolveDefense` | actor: fouler; target: fouled                                     |
-| ORB         | LIGHT                  | LIGHT                   | `resolveShot` rebound paths (~L2444 FT miss, ~L2532 regular miss)                    | actor: rebounderId; target: defender (failed to secure board)     |
-| DRB         | LIGHT                  | LIGHT                   | same rebound paths as ORB                                                            | actor: rebounderId; target: shooter (failed to get off. board)    |
-| BOXOUT      | LIGHT                  | MODERATE                | same rebound paths as ORB, when boxerId is non-null                                  | actor: boxerId; target: opponent being boxed out                  |
-| BLKLOOSE    | LIGHT                  | LIGHT                   | regular miss rebound path (~L2532), when block occurred + offensive rebound          | actor: rebounderId; target: blockCandidate                        |
+| Behavior ID | Actor Role / Intensity | Target Role / Intensity | Runtime Accounting Path                                                              | Participants                                                   |
+| ----------- | ---------------------- | ----------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| FT          | LIGHT                  | LIGHT                   | `resolveShot` ~L2429, `freeThrows.attempted` as duration (1–3)                       | actor: shooter; target: (none — self-action)                   |
+| PASSTOV     | LIGHT                  | LIGHT                   | `resolvePass` ~L1904, duration clamped to registry max (2s)                          | actor: passer (handlerBefore); target: defender                |
+| BALLDESTROY | LIGHT                  | LIGHT                   | `resolveCreation` ~L2022, duration clamped to registry max (2s)                      | actor: handlerBefore; target: defender                         |
+| PUTBACK     | LIGHT                  | LIGHT                   | `resolveShot` ~L2238, duration clamped to registry max (2s)                          | actor: shooter; target: defender                               |
+| BLK         | LIGHT                  | LIGHT                   | `resolveShot` ~L2408, duration 1s                                                    | actor: blockCandidate; target: shooter                         |
+| FOUL        | LIGHT                  | LIGHT                   | 4 call sites: `resolveShot`(offensive+shooting), `resolveCreation`, `resolveDefense` | actor: fouler; target: fouled                                  |
+| ORB         | LIGHT                  | LIGHT                   | `resolveShot` rebound paths (~L2444 FT miss, ~L2532 regular miss)                    | actor: rebounderId; target: defender (failed to secure board)  |
+| DRB         | LIGHT                  | LIGHT                   | same rebound paths as ORB                                                            | actor: rebounderId; target: shooter (failed to get off. board) |
+| BOXOUT      | LIGHT                  | MODERATE                | same rebound paths as ORB, when boxerId is non-null                                  | actor: boxerId; target: opponent being boxed out               |
+| BLKLOOSE    | LIGHT                  | LIGHT                   | regular miss rebound path (~L2532), when block occurred + offensive rebound          | actor: rebounderId; target: blockCandidate                     |
 
 All ten use the existing `addBehaviorEnergyCost()` accumulator in `SegmentRuntime`. No second
 energy system. No Action Trace Facts created. No change to game semantics, causal chains, or

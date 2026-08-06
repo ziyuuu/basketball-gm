@@ -1,4 +1,21 @@
-# P02-003 v2.10-energy-r2 Fixup Candidate Record
+# P02-003 Candidate and Scope-correction Record
+
+## 2026-08-07 Owner scope correction
+
+Authority:
+`docs/design/P02-003/P02_003_SCOPE_CORRECTION_AND_GATE_B_DOWNGRADE.md`.
+
+The r4--r6 review cycle incorrectly promoted exact non-selectable behavior targets, dual
+substitution reasons and product-level position restoration/anti-oscillation policy into P02-003
+blockers. Those requirements are now non-blocking or deferred to P02-006. P02-003 is judged on
+observable match termination, aggregate energy behavior, legal forced replacement, determinism,
+replay, statistics, CI and evidence integrity.
+
+Candidate `3489a70376ba1e02b12e8cf2a223499111fe7929` remains rejected as an exact SHA because CI #129
+failed formatting. Its runtime is not returned for further actor/target, dual-reason or restoration
+state-machine work. The ordinary successor carrying this correction and regenerated evidence is the
+next review Candidate. B8 may resume only after that successor passes CI; P02-004 remains blocked
+until Gate B.
 
 - Task: GitHub Issue #14, P02-003 Headless Model B
 - Branch: `task/p02-003-headless-model-b`
@@ -203,9 +220,12 @@ REQUEST CHANGES / NOT ACCEPTED
 CI #127: FAILURE
 
 P02-003 v2.10-energy-r6:
-IMPLEMENTED / SELF-VERIFIED
+REQUEST CHANGES / NOT ACCEPTED (CI #129 FAILURE)
+
+P02-003 scope-correction successor:
+IMPLEMENTED / LOCAL VERIFICATION COMPLETE
 CI PENDING
 
-INDEPENDENT REVIEW: REQUESTED
+OWNER SCOPE CORRECTION: FROZEN
 B8 / GATE B / PR READY / MERGE / P02-004: BLOCKED
 ```

@@ -15,6 +15,9 @@ create an ordinary revert of the successor only while retaining B1R–B6R and th
 record; do not force-push, reset, or restore a pre-v6 runner.
 
 The 2026-08-06 contract amendment is a later ordinary documentation successor. Its implementation
-has been delivered through v2.10-energy-r1 through r6. r4 and r5 were rejected by independent review.
-r6 addresses all remaining gaps. To roll back, revert the amendment and all dependent
-implementation commits together in a normal revert PR.
+has been delivered through v2.10-energy-r1 through r6. r4 and r5 were rejected by independent
+review; r6 was rejected as an exact SHA by CI #129. The 2026-08-07 scope correction is a later Owner
+decision that narrows P02-003 acceptance without reverting its runtime. To roll back the product
+energy direction, revert the amendment, scope correction and dependent implementation commits
+together in a normal revert PR. To roll back only the Gate correction, revert that decision and its
+evidence successor; do not silently revive r4--r6 review findings as blockers.
