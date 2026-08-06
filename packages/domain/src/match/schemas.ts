@@ -236,10 +236,8 @@ export type LegacyMatchPlayerSnapshot = z.infer<typeof LegacyMatchPlayerSnapshot
 export type PhysicalMatchPlayerSnapshotV1 = z.infer<typeof PhysicalMatchPlayerSnapshotV1Schema>;
 export type MatchPlayerSnapshotValue = z.infer<typeof MatchPlayerSnapshotSchema>;
 
-export type MatchPosition = z.infer<typeof PositionSchema>;
-
 /** All five lineup slots in canonical order. */
-export const POSITION_SLOTS: readonly MatchPosition[] = ['PG', 'SG', 'SF', 'PF', 'C'];
+export const POSITION_SLOTS = ['PG', 'SG', 'SF', 'PF', 'C'] as const;
 
 export const StartingLineupSchema = z
   .object({
