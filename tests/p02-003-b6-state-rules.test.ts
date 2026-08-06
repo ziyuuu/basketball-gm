@@ -273,6 +273,7 @@ describe('P02-003 B6 committed state, eligibility and internal policies', () => 
             inPlayerId: outPlayerId,
             transcriptEntryHash: null,
             forced: false,
+            reasonCode: null,
           },
         ],
       }),

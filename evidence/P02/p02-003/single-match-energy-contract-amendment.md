@@ -135,3 +135,32 @@ energy or forced-mismatch runtime behavior has already been implemented.
 - 44 Behavior / 16 EventType / 16 drawKind integrity ✓
 - Legacy hash preserved ✓
 - New rules/content hash distinct from legacy ✓
+
+## 2026-08-06 r5 Remediation Record
+
+**Status**: IMPLEMENTED / SELF-VERIFIED
+**Parent**: 7d91a296f38ff68b70ada40298d88df68a88159f (r4 Review Candidate, REJECTED)
+**Branch**: `task/p02-003-headless-model-b`
+**Version**: v2.10-energy-r5
+
+### r5 Fixes
+
+1. **Non-selectable behavior energy wiring**: 10 behaviors (FT, PASSTOV, BALLDESTROY, PUTBACK, BLK, FOUL, ORB, DRB, BOXOUT, BLKLOOSE) now call `addBehaviorEnergyCost` at runtime occurrence points.
+2. **Forced mismatch reason persistence**: SUBSTITUTION event schema extended with `reasonCode: string | null`. Foul-out and neutral-rotation payload builders preserve reasonCode.
+3. **Energy advantage gate removal**: `canRestorePrimaryPosition()` no longer requires 10,000 energy advantage. Added `restoredPositions` guard to prevent immediate ping-pong.
+
+### r4 Independent Review Outcome
+
+**r4 Candidate** `7d91a296f38ff68b70ada40298d88df68a88159f`
+**Review conclusion**: `REQUEST CHANGES / NOT ACCEPTED`
+**3 blockers**: non-selectable energy not wired, forced mismatch reason lost, unauthorized 10,000 energy gate
+
+### Current State
+
+```text
+P02-003 v2.10-energy-r5:
+IMPLEMENTED / SELF-VERIFIED
+
+INDEPENDENT REVIEW: REQUESTED
+B8 / GATE B / PR READY / MERGE / P02-004: BLOCKED
+```

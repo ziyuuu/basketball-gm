@@ -140,12 +140,57 @@ The v2.10-energy-r3 Candidate `904dc2e` was returned to development with 5 hard 
 | tests/p02-003-energy-forced-mismatch.test.ts     | Real test coverage (72 tests, +9 new)                  |
 | tests/helpers/p02-003-fixtures.ts                | Fix scrimmage away team position assignment            |
 
+### R4 Independent Review Outcome
+
+**r4 Candidate** `7d91a296f38ff68b70ada40298d88df68a88159f`
+**Tree** `be5c0d756ea9a3500cb34cea9b91842b7d53f379`
+**Parent** `b36bf0f83973514d63e1a3ea46512a1bf726598b`
+**CI** run `31097468798`, SUCCESS
+
+**Review conclusion**: `REQUEST CHANGES / NOT ACCEPTED` — 3 runtime blockers identified:
+
+1. 10 non-selectable behaviors registered in energy intensity table but not wired to runtime pipeline
+2. SUBSTITUTION events lose forced mismatch reason code during commit
+3. `canRestorePrimaryPosition()` requires unauthorized 10,000 energy advantage gate
+
+### 2026-08-06 v2.10-energy-r5 Remediation
+
+#### Identity
+
+- **Candidate**: (to be filled after final commit)
+- **Tree**: (to be filled after final commit)
+- **Parent**: `7d91a296f38ff68b70ada40298d88df68a88159f`
+- **Branch**: `task/p02-003-headless-model-b`
+- **Draft PR**: [#15](https://github.com/ziyuuu/basketball-gm/pull/15)
+
+#### r5 Fixes
+
+1. **Non-selectable behavior energy wiring**: 10 non-selectable behaviors (FT, PASSTOV, BALLDESTROY, PUTBACK, BLK, FOUL, ORB, DRB, BOXOUT, BLKLOOSE) now call `addBehaviorEnergyCost` directly at their runtime occurrence points in runner.ts, bypassing `addActionTrace`. Actor/target roles use actual participants per the 44-item registry contract.
+
+2. **Forced mismatch reason persistence**: SUBSTITUTION event schema extended with `reasonCode: z.string().nullable()`. Both foul-out and neutral-rotation payload builders now preserve `reasonCode` from the substitution plan. `forced` flag corrected from hardcoded `false` to `substitution.forced` in neutral rotation.
+
+3. **Energy advantage gate removal**: `canRestorePrimaryPosition()` no longer requires `minimumEnergyAdvantageMilli` (10,000) energy advantage. All frozen legality constraints preserved (on roster, on bench, not fouled out, no duplicates, legal at boundary). Added `restoredPositions` guard to prevent immediate outgoing-loop ping-pong with fresh restores.
+
+4. **Test fixes**: Pre-match fatigue test simplified; starter mismatch test uses C-primary player (no duplicate); bench recovery and match-clock tests use real game state assertions; added SUBSTITUTION reasonCode pipeline test, non-selectable intensity verification, full-match energy consumption test, and replay consistency test.
+
+#### Modified Files
+
+Runtime: `runner.ts`, `state-rules.ts`, `schemas.ts`
+Tests: `p02-003-energy-forced-mismatch.test.ts`, `p02-003-b6-state-rules.test.ts`
+Evidence: (pending final commit)
+
 ### Status
 
 ```text
 P02-003 v2.10-energy-r4:
+REQUEST CHANGES / NOT ACCEPTED
+
+INDEPENDENT REVIEW: COMPLETED — FAIL
+(see r4 review above)
+
+P02-003 v2.10-energy-r5:
 IMPLEMENTED / SELF-VERIFIED
 
-INDEPENDENT REVIEW: NOT STARTED
+INDEPENDENT REVIEW: REQUESTED
 B8 / GATE B / PR READY / MERGE / P02-004: BLOCKED
 ```

@@ -46,3 +46,21 @@ All energy consumption/recovery/penalty values are initial runnable defaults, no
 - No pause/tactics card system
 - No save V2, training, or growth effects
 - No P02-006 product assistant rotation
+
+## r4 Independent Review — Rejected (2026-08-06)
+
+**Candidate** `7d91a296f38ff68b70ada40298d88df68a88159f`
+**CI** run 31097468798, SUCCESS
+**Conclusion** `REQUEST CHANGES / NOT ACCEPTED`
+
+3 runtime blockers:
+
+1. 10 non-selectable behaviors (FT, PASSTOV, BALLDESTROY, PUTBACK, BLK, FOUL, ORB, DRB, BOXOUT, BLKLOOSE) registered but never wired to energy accounting
+2. SUBSTITUTION events lost forced mismatch reason codes; `forced: false` hardcoded for neutral rotation
+3. `canRestorePrimaryPosition()` required unauthorized 10,000 energy advantage gate
+
+## r5 Remediation (2026-08-06)
+
+All 3 blockers fixed. Non-selectable behaviors call `addBehaviorEnergyCost` directly at runtime. SUBSTITUTION events carry `reasonCode` (nullable). `canRestorePrimaryPosition` uses only frozen legality constraints.
+
+**Known r5 limitation**: SCRIMMAGE (6-player) match kind may exceed 10,000 steps in rare cases due to increased substitution activity from energy gate removal. OFFICIAL and FRIENDLY match kinds terminate normally. Tests use OFFICIAL fixtures for runToEnd verification.

@@ -27,8 +27,24 @@ manifest 35/35 and passed CI #103.
 - Gate B, PR Ready, merge, P02-004, UI/Site/deploy, saves and unrelated architecture changes.
 
 Status: B1R–B6R remain accepted for the contract reviewed at that time; B7 delivery is closed at
-`bf03e215…`. The later amendment requires targeted implementation remediation before B8. B8 /
-Gate B / PR Ready / merge / P02-004 remain blocked.
+`bf03e215…`. r4 rejected by independent review (3 runtime blockers). r5 addresses all blockers.
+B8 / Gate B / PR Ready / merge / P02-004 remain blocked.
+
+## 2026-08-06 v2.10-energy-r5 (from r4 rejection)
+
+**Parent**: `7d91a296f38ff68b70ada40298d88df68a88159f` (r4 Review Candidate, REJECTED)
+**Branch**: `task/p02-003-headless-model-b`
+**PR**: #15 Draft
+
+### r5 Scope
+
+- Non-selectable behavior energy wiring (FT, PASSTOV, BALLDESTROY, PUTBACK, BLK, FOUL, ORB, DRB, BOXOUT, BLKLOOSE — 10 behaviors)
+- Forced mismatch reason code persistence in SUBSTITUTION event schema
+- `canRestorePrimaryPosition()` energy gate removal (10,000 threshold removed)
+- Restored-position guard preventing immediate ping-pong substitutions
+- Real pipeline tests (84 energy/forced-mismatch tests, up from 72)
+- 44-behavior matrix updated with runtime accounting paths for non-selectable behaviors
+- Evidence files cleaned of stale r1-r4 placeholder content
 
 ## 2026-08-06 定点实现修复 (v2.10-energy-r4)
 

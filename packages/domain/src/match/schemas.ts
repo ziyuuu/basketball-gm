@@ -905,6 +905,7 @@ export const MatchEventPayloadSchema = z.discriminatedUnion('type', [
       inPlayerId: NonEmptyStringSchema,
       transcriptEntryHash: IdentityHashSchema.nullable(),
       forced: z.boolean(),
+      reasonCode: z.string().nullable(),
     })
     .strict(),
   z.object({ type: z.literal('EFFECT_APPLIED'), effectKey: NonEmptyStringSchema }).strict(),

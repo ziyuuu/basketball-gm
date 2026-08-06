@@ -1717,6 +1717,8 @@ function resolveDefense(
         const first = runtime.payloads.length;
         runtime.payloads.push(...foul.eventPayloads);
         resultIndexes.push(first);
+        runtime.addBehaviorEnergyCost('FOUL', 1, [defender.playerId], 'actor');
+        runtime.addBehaviorEnergyCost('FOUL', 1, [handlerBefore.playerId], 'target');
         runtime.facts.push(
           buildModelBDefensiveActionFactDraft({
             sourceEventIndexes: [clockIndex],
@@ -1900,6 +1902,8 @@ function resolvePass(
     behaviorId === 'CREATIVE_PASS',
   );
   if (resultIndexes !== null) {
+    runtime.addBehaviorEnergyCost('PASSTOV', duration, [handlerBefore.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('PASSTOV', duration, [defender.playerId], 'target');
     runtime.addActionTrace({
       behaviorId,
       clockIndex,
@@ -2002,6 +2006,8 @@ function resolveCreation(
       const first = runtime.payloads.length;
       runtime.payloads.push(...foul.eventPayloads);
       resultIndexes.push(...foul.eventPayloads.map((_, index) => first + index));
+      runtime.addBehaviorEnergyCost('FOUL', 1, [handlerBefore.playerId], 'actor');
+      runtime.addBehaviorEnergyCost('FOUL', 1, [defender.playerId], 'target');
       runtime.addActionTrace({
         behaviorId,
         clockIndex,
@@ -2019,6 +2025,8 @@ function resolveCreation(
   }
   const turnoverIndexes = resolveTurnover(runtime, handlerBefore, defender);
   if (turnoverIndexes !== null) {
+    runtime.addBehaviorEnergyCost('BALLDESTROY', duration, [handlerBefore.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('BALLDESTROY', duration, [defender.playerId], 'target');
     runtime.addActionTrace({
       behaviorId,
       clockIndex,
@@ -2227,6 +2235,12 @@ function resolveShot(
   const start = runtime.decisionElapsedSeconds;
   const clockIndex = runtime.appendDecisionClock(duration);
   const resultIndexes: number[] = [];
+  const isPutback =
+    runtime.initialHandlerReason === 'OFFENSIVE_REBOUND_CARRY' && runtime.passSequence === 0;
+  if (isPutback) {
+    runtime.addBehaviorEnergyCost('PUTBACK', duration, [shooter.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('PUTBACK', duration, [defender.playerId], 'target');
+  }
   const [offenseBlend, defenseBlend] = zoneBlends(zone);
   const opportunityQualityMilli = runtime.opportunityQuality();
   const makeProbabilityMilli = calculateShotProbabilityMilli({
@@ -2280,6 +2294,8 @@ function resolveShot(
     const first = runtime.payloads.length;
     runtime.payloads.push(...offensiveFoul.eventPayloads);
     resultIndexes.push(...offensiveFoul.eventPayloads.map((_, index) => first + index));
+    runtime.addBehaviorEnergyCost('FOUL', 1, [shooter.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('FOUL', 1, [defender.playerId], 'target');
     runtime.addActionTrace({
       behaviorId,
       clockIndex,
@@ -2332,6 +2348,8 @@ function resolveShot(
     const foulStart = runtime.payloads.length;
     runtime.payloads.push(...shootingFoul.eventPayloads);
     resultIndexes.push(...shootingFoul.eventPayloads.map((_, index) => foulStart + index));
+    runtime.addBehaviorEnergyCost('FOUL', 1, [defender.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('FOUL', 1, [shooter.playerId], 'target');
   } else if (runtime.periodRemaining > 0) {
     const flight = runtime.appendPostReleaseClock(Math.min(1, runtime.periodRemaining));
     if (flight !== null) resultIndexes.push(flight);
@@ -2386,6 +2404,10 @@ function resolveShot(
   runtime.payloads.push(...shot.eventPayloads);
   resultIndexes.push(...shot.eventPayloads.map((_, index) => shotStart + index));
   runtime.shotInstanceIndex += 1;
+  if (shot.blockOccurred && blockCandidate !== null) {
+    runtime.addBehaviorEnergyCost('BLK', 1, [blockCandidate.playerId], 'actor');
+    runtime.addBehaviorEnergyCost('BLK', 1, [shooter.playerId], 'target');
+  }
   if (shootingFoul.freeThrowAttempts > 0) {
     const ftStart = runtime.payloads.length;
     const freeThrows = buildModelBFreeThrowResolution(runtime.session, {
@@ -2402,6 +2424,10 @@ function resolveShot(
     });
     runtime.payloads.push(...freeThrows.eventPayloads);
     resultIndexes.push(...freeThrows.eventPayloads.map((_, index) => ftStart + index));
+    // Charge FT energy for actual free throw attempts
+    if (freeThrows.attempted > 0) {
+      runtime.addBehaviorEnergyCost('FT', 3, [shooter.playerId], 'actor');
+    }
     if (!freeThrows.lastAttemptMade && runtime.periodRemaining > 0) {
       const flight = runtime.appendPostReleaseClock(Math.min(1, runtime.periodRemaining));
       if (flight !== null) resultIndexes.push(flight);
@@ -2410,6 +2436,15 @@ function resolveShot(
         const rebound = buildRebound(runtime, shooter, defender, reboundStart);
         runtime.payloads.push(...rebound.eventPayloads);
         resultIndexes.push(reboundStart);
+        // Rebound energy accounting for FT miss
+        if (rebound.kind === 'OFFENSIVE') {
+          runtime.addBehaviorEnergyCost('ORB', 1, [rebound.rebounderId], 'actor');
+        } else {
+          runtime.addBehaviorEnergyCost('DRB', 1, [rebound.rebounderId], 'actor');
+        }
+        if (rebound.boxerId !== null) {
+          runtime.addBehaviorEnergyCost('BOXOUT', 1, [rebound.boxerId], 'actor');
+        }
         runtime.addActionTrace({
           behaviorId,
           clockIndex,
@@ -2480,6 +2515,22 @@ function resolveShot(
   const rebound = buildRebound(runtime, shooter, defender, reboundStart);
   runtime.payloads.push(...rebound.eventPayloads);
   resultIndexes.push(reboundStart);
+  // Rebound energy accounting
+  const isBlkLoose = shot.blockOccurred && rebound.kind === 'OFFENSIVE';
+  if (rebound.kind === 'OFFENSIVE') {
+    runtime.addBehaviorEnergyCost('ORB', 1, [rebound.rebounderId], 'actor');
+  } else {
+    runtime.addBehaviorEnergyCost('DRB', 1, [rebound.rebounderId], 'actor');
+  }
+  if (rebound.boxerId !== null) {
+    runtime.addBehaviorEnergyCost('BOXOUT', 1, [rebound.boxerId], 'actor');
+  }
+  if (isBlkLoose) {
+    runtime.addBehaviorEnergyCost('BLKLOOSE', 1, [rebound.rebounderId], 'actor');
+    if (blockCandidate !== null) {
+      runtime.addBehaviorEnergyCost('BLKLOOSE', 1, [blockCandidate.playerId], 'target');
+    }
+  }
   runtime.addActionTrace({
     behaviorId,
     clockIndex,

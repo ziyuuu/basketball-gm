@@ -56,3 +56,27 @@ supplementary arithmetic coverage. It also verifies transition subvalue isolatio
 229, OFFICIAL / FRIENDLY / SCRIMMAGE `step → runToEnd → replay` object equality, and the one
 minimal protocol/replay consistency negative. B8 calibration statistics are intentionally not
 included.
+
+## Non-Selectable Behavior Energy Accounting (v2.10-energy-r5)
+
+These 10 behaviors are `RULE_RESULT` or `ATTRIBUTION_ONLY` — never selected via
+`selectableBehavior()`, never produce `ACTION_TRACE` Facts. Energy is charged via direct
+`runtime.addBehaviorEnergyCost()` calls at each runtime occurrence point in `runner.ts`.
+
+| Behavior ID | Actor Role / Intensity | Target Role / Intensity | Runtime Accounting Path | Participants |
+|-------------|------------------------|------------------------|------------------------|--------------|
+| FT          | LIGHT                  | LIGHT                  | `resolveShot` ~L2429, after free throw resolution | actor: shooter; target: (none — self-action) |
+| PASSTOV     | LIGHT                  | LIGHT                  | `resolvePass` ~L1904, after turnover confirmed | actor: passer (handlerBefore); target: defender |
+| BALLDESTROY | LIGHT                  | LIGHT                  | `resolveCreation` ~L2022, after creation turnover | actor: handlerBefore; target: defender |
+| PUTBACK     | LIGHT                  | LIGHT                  | `resolveShot` ~L2238, when handler = ORB carrier with no pass | actor: shooter; target: defender |
+| BLK         | LIGHT                  | LIGHT                  | `resolveShot` ~L2391, after shot resolution when block occurred | actor: blockCandidate; target: shooter |
+| FOUL        | LIGHT                  | LIGHT                  | 4 call sites: `resolveShot`(offensive+shooting), `resolveCreation`, `resolveDefense` | actor: fouler; target: fouled |
+| ORB         | LIGHT                  | LIGHT                  | `resolveShot` rebound paths (~L2444 FT miss, ~L2532 regular miss) | actor: rebounderId |
+| DRB         | LIGHT                  | LIGHT                  | same rebound paths as ORB | actor: rebounderId |
+| BOXOUT      | LIGHT                  | MODERATE               | same rebound paths as ORB, when boxerId is non-null | actor: boxerId |
+| BLKLOOSE    | LIGHT                  | LIGHT                  | regular miss rebound path (~L2532), when block occurred + offensive rebound | actor: rebounderId; target: blockCandidate |
+
+All ten use the existing `addBehaviorEnergyCost()` accumulator in `SegmentRuntime`. No second
+energy system. No Action Trace Facts created. No change to game semantics, causal chains, or
+RNG streams. Energy deltas flow through the same `commitRuntime → commitModelBActiveSegment →
+commitModelBTransition` pipeline as selectable behavior costs.

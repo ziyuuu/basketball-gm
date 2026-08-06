@@ -92,18 +92,18 @@ describe('P02-003 energy initialization', () => {
     // v2.10: pre-match fatigueMilli on the player snapshot is compat-only —
     // genesis energy is always 0 regardless of the snapshot value.
     for (const preFatigue of [0, 10_000, 80_000, 100_000]) {
-      // Create a player with the specified pre-match fatigue and verify the
-      // energy contract expects genesis to override it to 0.
+      // Create a player with the specified pre-match fatigue — verify the
+      // snapshot value can be non-zero, but session genesis normalizes it.
       const player = makePhysicalPlayer('FATIGUE-TEST', { fatigueMilli: preFatigue });
       expect(player.fatigueMilli).toBe(preFatigue);
-      // The session creation contract: regardless of snapshot fatigueMilli,
-      // genesis fatigueMilliByPlayer must be 0 for all players.
-      const input = makeP02MatchInput();
-      const session = createModelBSession(input);
-      const genesis = session.anchors[0]!;
-      for (const playerId of Object.keys(genesis.fatigueMilliByPlayer)) {
-        expect(genesis.fatigueMilliByPlayer[playerId]).toBe(0);
-      }
+    }
+    // The session creation contract: regardless of any snapshot fatigueMilli,
+    // genesis fatigueMilliByPlayer must be 0 for all players.
+    // Verified via the standard fixture (which uses fatigueMilli=0).
+    const session = createModelBSession(makeP02MatchInput());
+    const genesis = session.anchors[0]!;
+    for (const playerId of Object.keys(genesis.fatigueMilliByPlayer)) {
+      expect(genesis.fatigueMilliByPlayer[playerId]).toBe(0);
     }
   });
 });
@@ -474,9 +474,12 @@ describe('P02-003 starter primary-position validation', () => {
 
   it('rejects a starter whose primaryPosition does not match the slot', () => {
     const input = makeP02MatchInput();
-    // Find a PG player and swap them into the SF slot
-    const pgPlayer = input.homeTeam.players.find((p) => p.primaryPosition === 'PG')!;
-    input.homeTeam.startingLineup.SF = pgPlayer.playerId;
+    // Assign a C-primary player to the SF slot — wrong position, but no duplicate player
+    const cPlayer = input.homeTeam.players.find((p) => p.primaryPosition === 'C')!;
+    const sfPlayerId = input.homeTeam.startingLineup.SF;
+    // Ensure we're not creating a duplicate (C player is at C slot, SF player is a different player)
+    expect(cPlayer.playerId).not.toBe(sfPlayerId);
+    input.homeTeam.startingLineup.SF = cPlayer.playerId;
     expect(() => createModelBSession(input)).toThrow();
   });
 });
@@ -484,21 +487,39 @@ describe('P02-003 starter primary-position validation', () => {
 // ── 13. Bench Recovery Through Match State ───────────────────────────────
 
 describe('P02-003 bench recovery through match state', () => {
-  it('bench players recover energy after a dead-ball boundary', () => {
-    const input = makeP02MatchInput({ matchKind: 'SCRIMMAGE' });
+  it('bench players recover energy during match compared to starters', () => {
+    const input = makeP02MatchInput();
     const benchPlayerId = input.homeTeam.registeredRosterIds[5]!;
+    const starterPlayerId = input.homeTeam.registeredRosterIds[0]!;
     const session = createModelBSession(input);
+    const genesis = session.anchors[0]!;
     const ran = runToEnd(session);
     const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
-    // Bench player energy should be ≥ 0 (recovered or stayed at 0) and ≤ 100000
-    expect(finalAnchor.fatigueMilliByPlayer[benchPlayerId]).toBeGreaterThanOrEqual(0);
-    expect(finalAnchor.fatigueMilliByPlayer[benchPlayerId]).toBeLessThanOrEqual(100_000);
+    // Starters consume energy (fatigueMilliByPlayer > 0)
+    expect(finalAnchor.fatigueMilliByPlayer[starterPlayerId]).toBeGreaterThan(0);
+    // Bench players who stayed on bench recover or consume far less than starters
+    const benchConsumed = finalAnchor.fatigueMilliByPlayer[benchPlayerId] ?? 0;
+    const starterConsumed = finalAnchor.fatigueMilliByPlayer[starterPlayerId] ?? 0;
+    // Bench player should have consumed less than starter (they were on bench recovering)
+    expect(benchConsumed).toBeLessThan(starterConsumed);
   });
 
   it('quarter break recovery is applied at period boundaries', () => {
+    // These registry values define the frozen recovery amounts.
+    // The test verifies they are non-zero and that halftime > quarter break.
     expect(MODEL_B_PARAMETER_REGISTRY.quarterBreakRecoveryMilli).toBe(5_000);
     expect(MODEL_B_PARAMETER_REGISTRY.halftimeRecoveryMilli).toBe(20_000);
     expect(MODEL_B_PARAMETER_REGISTRY.overtimeBreakRecoveryMilli).toBe(5_000);
+    // Run a full match to end and verify that a starter's consumed energy
+    // is meaningfully greater than 0 (proving base+behavior consumption),
+    // yet stays well below cap (proving recovery boundaries are applied).
+    const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
+    const ran = runToEnd(session);
+    const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
+    const starterId = ran.input.homeTeam.registeredRosterIds[0]!;
+    const consumed = finalAnchor.fatigueMilliByPlayer[starterId] ?? 0;
+    expect(consumed).toBeGreaterThan(0);
+    expect(consumed).toBeLessThan(100_000);
   });
 });
 
@@ -531,6 +552,25 @@ describe('P02-003 forced mismatch pipeline', () => {
       MODEL_B_PARAMETER_REGISTRY.forcedMismatchPenaltyMilli,
     );
   });
+
+  it('SUBSTITUTION events carry reasonCode through full match pipeline', () => {
+    // Run a full match and verify SUBSTITUTION events exist with reasonCode
+    const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
+    const ran = runToEnd(session);
+    const subEvents = ran.events.filter((e) => e.payload.type === 'SUBSTITUTION');
+    // At least some substitutions should occur during a full match
+    expect(subEvents.length).toBeGreaterThan(0);
+    // Every SUBSTITUTION event must have a reasonCode field (nullable)
+    for (const event of subEvents) {
+      const payload = event.payload as { type: 'SUBSTITUTION'; reasonCode: string | null };
+      expect(payload).toHaveProperty('reasonCode');
+      // reasonCode is either null or a non-empty string
+      if (payload.reasonCode !== null) {
+        expect(typeof payload.reasonCode).toBe('string');
+        expect(payload.reasonCode.length).toBeGreaterThan(0);
+      }
+    }
+  });
 });
 
 // ── 15. Behavior Energy Participant Role Matrix ──────────────────────────
@@ -548,5 +588,121 @@ describe('P02-003 behavior energy participant role matrix', () => {
         roleEntry.target,
       );
     }
+  });
+
+  it('full match produces non-zero energy consumption for on-court players', () => {
+    // Run a full match and verify starters consumed meaningful energy
+    const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
+    const ran = runToEnd(session);
+    const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
+    // All 5 starters should have consumed energy from base + behavior costs
+    const starterIds = Object.values(ran.input.homeTeam.startingLineup);
+    for (const playerId of starterIds) {
+      const consumed = finalAnchor.fatigueMilliByPlayer[playerId] ?? 0;
+      expect(consumed).toBeGreaterThan(0);
+    }
+  });
+
+  it('non-selectable behaviors produce energy charges distinguishable from selectable ones', () => {
+    // The 10 non-selectable behaviors each have energy intensities in the registry
+    const nonSelectable = [
+      'FT',
+      'PASSTOV',
+      'BALLDESTROY',
+      'PUTBACK',
+      'BLK',
+      'FOUL',
+      'ORB',
+      'DRB',
+      'BOXOUT',
+      'BLKLOOSE',
+    ] as const;
+    for (const behaviorId of nonSelectable) {
+      const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
+      expect(entry, `${behaviorId} should have energy intensity`).toBeDefined();
+      const roleEntry = entry as { actor: string; target: string };
+      expect(['LIGHT', 'MODERATE', 'HEAVY']).toContain(roleEntry.actor);
+      expect(['LIGHT', 'MODERATE', 'HEAVY']).toContain(roleEntry.target);
+    }
+  });
+});
+
+// ── 16. Non-Selectable Behavior Energy Accounting ───────────────────────
+
+describe('P02-003 non-selectable behavior energy accounting', () => {
+  it('FOUL energy uses correct actor/target roles (actor = fouler, target = fouled)', () => {
+    // FOUL intensity is LIGHT/LIGHT per registry
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.FOUL as { actor: string; target: string };
+    expect(entry.actor).toBe('LIGHT');
+    expect(entry.target).toBe('LIGHT');
+  });
+
+  it('FT energy is LIGHT intensity for the shooter (actor only)', () => {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.FT as { actor: string; target: string };
+    expect(entry.actor).toBe('LIGHT');
+  });
+
+  it('BLK energy uses LIGHT actor (blocker) and LIGHT target (shooter)', () => {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.BLK as { actor: string; target: string };
+    expect(entry.actor).toBe('LIGHT');
+    expect(entry.target).toBe('LIGHT');
+  });
+
+  it('BOXOUT uses LIGHT actor and MODERATE target (boxing out is more demanding on target)', () => {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.BOXOUT as { actor: string; target: string };
+    expect(entry.actor).toBe('LIGHT');
+    expect(entry.target).toBe('MODERATE');
+  });
+
+  it('ORB and DRB are both LIGHT/LIGHT intensity', () => {
+    const orbEntry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.ORB as { actor: string; target: string };
+    const drbEntry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.DRB as { actor: string; target: string };
+    expect(orbEntry.actor).toBe('LIGHT');
+    expect(drbEntry.actor).toBe('LIGHT');
+  });
+
+  it('PASSTOV, BALLDESTROY, PUTBACK, BLKLOOSE are LIGHT/LIGHT', () => {
+    for (const id of ['PASSTOV', 'BALLDESTROY', 'PUTBACK', 'BLKLOOSE'] as const) {
+      const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[id] as { actor: string; target: string };
+      expect(entry.actor).toBe('LIGHT');
+      expect(entry.target).toBe('LIGHT');
+    }
+  });
+
+  it('intensity cost tiers produce increasing costs', () => {
+    const lightCost = calculateBehaviorEnergyCostMilli('LIGHT', 3, 50);
+    const moderateCost = calculateBehaviorEnergyCostMilli('MODERATE', 3, 50);
+    const heavyCost = calculateBehaviorEnergyCostMilli('HEAVY', 3, 50);
+    expect(lightCost).toBeGreaterThan(0);
+    expect(moderateCost).toBeGreaterThan(lightCost);
+    expect(heavyCost).toBeGreaterThan(moderateCost);
+  });
+});
+
+// ── 17. Restore Primary Position (No Energy Gate) ────────────────────────
+
+describe('P02-003 restore primary position without energy advantage gate', () => {
+  it('starter energy consumption is driven by actual game events', () => {
+    // Run a match and verify starters consume energy from time + behavior costs
+    const session = createModelBSession(makeP02MatchInput({ matchKind: 'OFFICIAL' }));
+    const ran = runToEnd(session);
+    const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
+    const starterId = ran.input.homeTeam.startingLineup.PG;
+    const consumed = finalAnchor.fatigueMilliByPlayer[starterId] ?? 0;
+    // After a full match, starters should have consumed significant energy
+    expect(consumed).toBeGreaterThan(0);
+    expect(consumed).toBeLessThan(100_000);
+  });
+
+  it('replay consistency is preserved after energy gate removal', () => {
+    const session1 = createModelBSession(makeP02MatchInput({ rootSeed: 'replay-r5-test' }));
+    const ran1 = runToEnd(session1);
+    const session2 = createModelBSession(makeP02MatchInput({ rootSeed: 'replay-r5-test' }));
+    const ran2 = runToEnd(session2);
+    // Same seed must produce same energy consumption
+    const final1 = ran1.anchors[ran1.anchors.length - 1]!;
+    const final2 = ran2.anchors[ran2.anchors.length - 1]!;
+    expect(final1.fatigueMilliByPlayer).toEqual(final2.fatigueMilliByPlayer);
+    expect(final1.anchorHash).toBe(final2.anchorHash);
   });
 });

@@ -469,7 +469,6 @@ function canRestorePrimaryPosition(
   side: MatchSide,
   position: MatchPosition,
   currentLineup: StartingLineup,
-  minimumEnergyAdvantageMilli: number,
 ): string | null {
   const currentPlayerId = currentLineup[position];
   const currentPlayer = playerById(session.input, side).get(currentPlayerId);
@@ -486,10 +485,6 @@ function canRestorePrimaryPosition(
         session.input.rules.foulOutLimit,
   );
   if (benchPrimary === undefined) return null;
-
-  const currentEnergy = anchor.fatigueMilliByPlayer[currentPlayerId] ?? 0;
-  const benchEnergy = anchor.fatigueMilliByPlayer[benchPrimary.playerId] ?? 0;
-  if (currentEnergy - benchEnergy < minimumEnergyAdvantageMilli) return null;
 
   return benchPrimary.playerId;
 }
@@ -583,6 +578,7 @@ export function buildModelBFoulOutBoundaryPlan(session: ModelBSession): ModelBFo
     inPlayerId: substitution.inPlayerId,
     transcriptEntryHash: null,
     forced: true,
+    reasonCode: substitution.reasonCode,
   }));
   if (forfeitingSide !== null) {
     eventPayloads.length = 0;
@@ -658,15 +654,10 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
       );
     // v2.10: Return-to-normal — before processing outgoing fatigue subs,
     // check each slot for a mismatched player that can be restored to a
-    // primary-position bench player with an energy advantage.
+    // primary-position bench player.
+    const restoredPositions = new Set<MatchPosition>();
     for (const position of POSITION_ORDER) {
-      const restoreId = canRestorePrimaryPosition(
-        session,
-        side,
-        position,
-        workingLineups[key],
-        MODEL_B_PARAMETER_REGISTRY.neutralRotationMinimumEnergyAdvantageMilli,
-      );
+      const restoreId = canRestorePrimaryPosition(session, side, position, workingLineups[key]);
       if (restoreId === null) continue;
       const currentId = workingLineups[key][position];
       substitutions.push({
@@ -678,8 +669,12 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
         reasonCode: 'INTERNAL_TEST_FATIGUE_POSITION',
       });
       workingLineups[key] = replaceLineupPlayer(workingLineups[key], currentId, restoreId);
+      // Prevent the outgoing pass from immediately re-substituting the just-restored position
+      restoredPositions.add(position);
     }
     for (const candidate of outgoing) {
+      // Skip positions just restored — avoid ping-pong with the outgoing fatigue loop
+      if (restoredPositions.has(candidate.position)) continue;
       const result = selectBestPrimaryOrFallback(
         session,
         side,
@@ -710,7 +705,8 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
     outPlayerId: substitution.outPlayerId,
     inPlayerId: substitution.inPlayerId,
     transcriptEntryHash: null,
-    forced: false,
+    forced: substitution.forced,
+    reasonCode: substitution.reasonCode,
   }));
   return {
     policyId: MODEL_B_INTERNAL_TEST_ROTATION_POLICY_ID,
