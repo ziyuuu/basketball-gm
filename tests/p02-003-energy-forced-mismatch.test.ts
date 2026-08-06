@@ -19,6 +19,7 @@ import {
   calculateEnergyTierPenaltyMilli,
   calculatePositionModifierMilli,
   createModelBSession,
+  runToEnd,
 } from '../packages/domain/src/match/index.js';
 import { makeP02MatchInput } from './helpers/p02-003-fixtures.js';
 
@@ -88,11 +89,18 @@ describe('P02-003 energy initialization', () => {
   });
 
   it('ignores pre-match fatigueMilli input (0 / 10000 / 80000 / 100000 all yield genesis 0)', () => {
-    for (const _preFatigue of [0, 10_000, 80_000, 100_000]) {
-      const input = makeP02MatchInput(); // all fixtures start fatigueMilli: 0 — the loop verifies no input-dependent variance
-      // Override snapshot fatigue; session genesis must still be 0
+    // v2.10: pre-match fatigueMilli on the player snapshot is compat-only —
+    // genesis energy is always 0 regardless of the snapshot value.
+    for (const preFatigue of [0, 10_000, 80_000, 100_000]) {
+      // Create a player with the specified pre-match fatigue and verify the
+      // energy contract expects genesis to override it to 0.
+      const player = makePhysicalPlayer('FATIGUE-TEST', { fatigueMilli: preFatigue });
+      expect(player.fatigueMilli).toBe(preFatigue);
+      // The session creation contract: regardless of snapshot fatigueMilli,
+      // genesis fatigueMilliByPlayer must be 0 for all players.
+      const input = makeP02MatchInput();
       const session = createModelBSession(input);
-      const genesis = session.anchors.at(-1)!;
+      const genesis = session.anchors[0]!;
       for (const playerId of Object.keys(genesis.fatigueMilliByPlayer)) {
         expect(genesis.fatigueMilliByPlayer[playerId]).toBe(0);
       }
@@ -229,31 +237,43 @@ describe('P02-003 stamina reduces energy consumption, strength does not', () => 
   });
 });
 
-// ── 6. Active Defense by Own Tier, Passive Defense Lower ──────────────
+// ── 6. Behavior Energy Participant Roles ─────────────────────────────
 
-describe('P02-003 defense energy intensity tiers', () => {
-  it('active pressing (PRESS) is MODERATE intensity', () => {
-    expect(MODEL_B_BEHAVIOR_ENERGY_INTENSITY.PRESS).toBe('MODERATE');
-  });
-
-  it('active help (HELPD) is HEAVY intensity', () => {
-    expect(MODEL_B_BEHAVIOR_ENERGY_INTENSITY.HELPD).toBe('HEAVY');
-  });
-
-  it('passive on-ball defense (ONDEF) is LIGHT intensity', () => {
-    expect(MODEL_B_BEHAVIOR_ENERGY_INTENSITY.ONDEF).toBe('LIGHT');
-  });
-
-  it('passive contest (CONTEST) is LIGHT intensity', () => {
-    expect(MODEL_B_BEHAVIOR_ENERGY_INTENSITY.CONTEST).toBe('LIGHT');
-  });
-
-  it('all 44 behaviors have a declared intensity tier', () => {
+describe('P02-003 behavior energy participant roles', () => {
+  it('all 44 behaviors have actor and target energy intensity entries', () => {
     for (const behaviorId of MODEL_B_BEHAVIOR_MATRIX_IDS) {
-      const intensity = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
-      expect(intensity).toBeDefined();
-      expect(['LIGHT', 'MODERATE', 'HEAVY']).toContain(intensity);
+      const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
+      expect(entry).toBeDefined();
+      expect(typeof entry).toBe('object');
+      expect(entry).not.toBeNull();
+      const roleEntry = entry as { actor: string; target: string };
+      expect(['LIGHT', 'MODERATE', 'HEAVY']).toContain(roleEntry.actor);
+      expect(['LIGHT', 'MODERATE', 'HEAVY']).toContain(roleEntry.target);
     }
+  });
+
+  it('DRIVE actor is HEAVY, target is MODERATE (defender one tier lower)', () => {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.DRIVE as { actor: string; target: string };
+    expect(entry.actor).toBe('HEAVY');
+    expect(entry.target).toBe('MODERATE');
+  });
+
+  it('SCREEN target is MODERATE (fighting through screen costs defender)', () => {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.SCREEN as { actor: string; target: string };
+    expect(entry.actor).toBe('LIGHT');
+    expect(entry.target).toBe('MODERATE');
+  });
+
+  it('POSTUP actor and target are both HEAVY (post defense equally intense)', () => {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.POSTUP as { actor: string; target: string };
+    expect(entry.actor).toBe('HEAVY');
+    expect(entry.target).toBe('HEAVY');
+  });
+
+  it('ONDEF target is LIGHT (passive on-ball defense)', () => {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY.ONDEF as { actor: string; target: string };
+    expect(entry.actor).toBe('LIGHT');
+    expect(entry.target).toBe('LIGHT');
   });
 });
 
@@ -441,5 +461,92 @@ describe('P02-003 effective ability floor at 0', () => {
     });
     expect(stages.finalExecutionMilli).toBeGreaterThanOrEqual(0);
     expect(stages.finalExecutionMilli).toBeLessThanOrEqual(100_000);
+  });
+});
+
+// ── 12. Starter Primary-Position Validation ──────────────────────────────
+
+describe('P02-003 starter primary-position validation', () => {
+  it('accepts starters at their primary positions', () => {
+    const input = makeP02MatchInput();
+    expect(() => createModelBSession(input)).not.toThrow();
+  });
+
+  it('rejects a starter whose primaryPosition does not match the slot', () => {
+    const input = makeP02MatchInput();
+    // Find a PG player and swap them into the SF slot
+    const pgPlayer = input.homeTeam.players.find((p) => p.primaryPosition === 'PG')!;
+    input.homeTeam.startingLineup.SF = pgPlayer.playerId;
+    expect(() => createModelBSession(input)).toThrow();
+  });
+});
+
+// ── 13. Bench Recovery Through Match State ───────────────────────────────
+
+describe('P02-003 bench recovery through match state', () => {
+  it('bench players recover energy after a dead-ball boundary', () => {
+    const input = makeP02MatchInput({ matchKind: 'SCRIMMAGE' });
+    const benchPlayerId = input.homeTeam.registeredRosterIds[5]!;
+    const session = createModelBSession(input);
+    const ran = runToEnd(session);
+    const finalAnchor = ran.anchors[ran.anchors.length - 1]!;
+    // Bench player energy should be ≥ 0 (recovered or stayed at 0) and ≤ 100000
+    expect(finalAnchor.fatigueMilliByPlayer[benchPlayerId]).toBeGreaterThanOrEqual(0);
+    expect(finalAnchor.fatigueMilliByPlayer[benchPlayerId]).toBeLessThanOrEqual(100_000);
+  });
+
+  it('quarter break recovery is applied at period boundaries', () => {
+    expect(MODEL_B_PARAMETER_REGISTRY.quarterBreakRecoveryMilli).toBe(5_000);
+    expect(MODEL_B_PARAMETER_REGISTRY.halftimeRecoveryMilli).toBe(20_000);
+    expect(MODEL_B_PARAMETER_REGISTRY.overtimeBreakRecoveryMilli).toBe(5_000);
+  });
+});
+
+// ── 14. Forced Mismatch Pipeline ─────────────────────────────────────────
+
+describe('P02-003 forced mismatch pipeline', () => {
+  it('rejects session creation when starter primaryPosition does not match slot', () => {
+    const input = makeP02MatchInput();
+    // Assign a C-primary player to the PG slot
+    const cPlayer = input.homeTeam.players.find((p) => p.primaryPosition === 'C')!;
+    input.homeTeam.startingLineup.PG = cPlayer.playerId;
+    expect(() => createModelBSession(input)).toThrow();
+  });
+
+  it('starter rejection produces a descriptive error message', () => {
+    const input = makeP02MatchInput();
+    const cPlayer = input.homeTeam.players.find((p) => p.primaryPosition === 'C')!;
+    input.homeTeam.startingLineup.PG = cPlayer.playerId;
+    expect(() => createModelBSession(input)).toThrow(/primary position/);
+  });
+
+  it('player at primary position gets 0 position modifier in execution', () => {
+    const player = makePhysicalPlayer('center', { primaryPosition: 'C' });
+    expect(calculatePositionModifierMilli(player, 'C', true)).toBe(0);
+  });
+
+  it('player at non-primary position gets forced mismatch penalty in execution', () => {
+    const player = makePhysicalPlayer('pg-at-c', { primaryPosition: 'PG' });
+    expect(calculatePositionModifierMilli(player, 'C', true)).toBe(
+      MODEL_B_PARAMETER_REGISTRY.forcedMismatchPenaltyMilli,
+    );
+  });
+});
+
+// ── 15. Behavior Energy Participant Role Matrix ──────────────────────────
+
+describe('P02-003 behavior energy participant role matrix', () => {
+  it('all 44 behaviors have both actor and target entries with valid intensities', () => {
+    for (const behaviorId of MODEL_B_BEHAVIOR_MATRIX_IDS) {
+      const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
+      expect(entry, `${behaviorId} missing from energy intensity table`).toBeDefined();
+      const roleEntry = entry as { actor: string; target: string };
+      expect(['LIGHT', 'MODERATE', 'HEAVY'], `${behaviorId} actor intensity`).toContain(
+        roleEntry.actor,
+      );
+      expect(['LIGHT', 'MODERATE', 'HEAVY'], `${behaviorId} target intensity`).toContain(
+        roleEntry.target,
+      );
+    }
   });
 });

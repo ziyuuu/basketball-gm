@@ -454,6 +454,7 @@ function effectiveExecution(
 
 function transitionIndividualExecution(
   session: ModelBSession,
+  side: MatchSide,
   playerSnapshot: MatchPlayerSnapshot,
   blend: Extract<
     ModelBExecutionBlend,
@@ -463,8 +464,8 @@ function transitionIndividualExecution(
   return calculateEffectiveExecutionStages({
     player: currentSnapshot(session, playerSnapshot),
     blend,
-    assignedPosition: null,
-    applyPositionMismatch: false,
+    assignedPosition: assignedPosition(session, side, playerSnapshot.playerId),
+    applyPositionMismatch: true,
     traitContext: 'NONE',
     chemistryModifierMilli: 0,
     applyChemistry: false,
@@ -493,7 +494,8 @@ function weightedTransitionExecution(
   if (totalWeight < 1) throw new Error('Transition execution weights must be positive.');
   const weighted = participants.reduce(
     (sum, participant, index) =>
-      sum + transitionIndividualExecution(session, participant, blends[index]!) * weights[index]!,
+      sum +
+      transitionIndividualExecution(session, side, participant, blends[index]!) * weights[index]!,
     0,
   );
   return clampFixedPoint(
@@ -852,14 +854,16 @@ class SegmentRuntime {
     };
   }
 
-  /** Accumulate behavior-participant energy cost with stamina reduction. */
+  /** Accumulate behavior-participant energy cost with stamina reduction, differentiated by role. */
   addBehaviorEnergyCost(
     behaviorId: ModelBBehaviorId,
     durationSeconds: number,
     participantPlayerIds: readonly string[],
+    role: 'actor' | 'target',
   ): void {
-    const intensity = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
-    if (intensity === undefined) return;
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
+    if (entry === undefined) return;
+    const intensity = entry[role];
     for (const playerId of participantPlayerIds) {
       // Find the player snapshot to get stamina
       const player = [...this.offense, ...this.defense].find((p) => p.playerId === playerId);
@@ -970,10 +974,18 @@ class SegmentRuntime {
         ...coordinate,
       },
     });
-    // Accumulate behavior-participant energy cost
-    const participants = new Set([...input.actorIds, ...input.targetIds]);
-    if (participants.size > 0) {
-      this.addBehaviorEnergyCost(input.behaviorId, input.durationSeconds, [...participants]);
+    // Accumulate behavior-participant energy cost — separate actor and target roles
+    if (input.actorIds.length > 0) {
+      this.addBehaviorEnergyCost(
+        input.behaviorId,
+        input.durationSeconds,
+        [...input.actorIds],
+        'actor',
+      );
+    }
+    const uniqueTargets = input.targetIds.filter((tid) => !input.actorIds.includes(tid));
+    if (uniqueTargets.length > 0) {
+      this.addBehaviorEnergyCost(input.behaviorId, input.durationSeconds, uniqueTargets, 'target');
     }
   }
 

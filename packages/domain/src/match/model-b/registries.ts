@@ -278,60 +278,65 @@ export const MODEL_B_BEHAVIOR_MATRIX_IDS = deepFreeze([
 
 export type ModelBBehaviorId = (typeof MODEL_B_BEHAVIOR_MATRIX_IDS)[number];
 
-/** v2.10 Energy intensity per behavior. All 44 behaviors must have an entry. */
+/** v2.10 Energy intensity per behavior, per participant role. All 44 behaviors must have both actor and target entries. */
 export const MODEL_B_BEHAVIOR_ENERGY_INTENSITY = deepFreeze({
   // Advance
-  ADV: 'LIGHT',
-  REORG: 'LIGHT',
-  // Creation
-  DRIVE: 'HEAVY',
-  SHAKE: 'MODERATE',
-  ISO: 'HEAVY',
-  STEP_BACK: 'MODERATE',
-  POSTUP: 'HEAVY',
-  HIGH_POST_CREATION: 'LIGHT',
-  // Shot
-  SPOTUP: 'LIGHT',
-  CATCHSHOT: 'LIGHT',
-  THREE: 'MODERATE',
-  MID: 'LIGHT',
-  PULLUP: 'MODERATE',
-  CLOSE: 'MODERATE',
-  FLOATER: 'MODERATE',
-  HOOK: 'HEAVY',
-  LAYUP: 'MODERATE',
-  CONTACTFIN: 'HEAVY',
-  CONTESTEDFIN: 'HEAVY',
+  ADV: { actor: 'LIGHT', target: 'LIGHT' },
+  REORG: { actor: 'LIGHT', target: 'LIGHT' },
+  // Creation — target defends passively (one tier lower for high-intensity actions)
+  DRIVE: { actor: 'HEAVY', target: 'MODERATE' },
+  SHAKE: { actor: 'MODERATE', target: 'MODERATE' },
+  ISO: { actor: 'HEAVY', target: 'MODERATE' },
+  STEP_BACK: { actor: 'MODERATE', target: 'LIGHT' },
+  POSTUP: { actor: 'HEAVY', target: 'HEAVY' },
+  HIGH_POST_CREATION: { actor: 'LIGHT', target: 'LIGHT' },
+  // Shot — shooter expends energy; defender cost is lighter
+  SPOTUP: { actor: 'LIGHT', target: 'LIGHT' },
+  CATCHSHOT: { actor: 'LIGHT', target: 'LIGHT' },
+  THREE: { actor: 'MODERATE', target: 'LIGHT' },
+  MID: { actor: 'LIGHT', target: 'LIGHT' },
+  PULLUP: { actor: 'MODERATE', target: 'LIGHT' },
+  CLOSE: { actor: 'MODERATE', target: 'LIGHT' },
+  FLOATER: { actor: 'MODERATE', target: 'LIGHT' },
+  HOOK: { actor: 'HEAVY', target: 'MODERATE' },
+  LAYUP: { actor: 'MODERATE', target: 'MODERATE' },
+  CONTACTFIN: { actor: 'HEAVY', target: 'HEAVY' },
+  CONTESTEDFIN: { actor: 'HEAVY', target: 'HEAVY' },
   // Pass
-  PASS: 'LIGHT',
-  HPASS: 'LIGHT',
-  CREATIVE_PASS: 'MODERATE',
-  ASTOPP: 'LIGHT',
-  HELDKICK: 'LIGHT',
-  // Off-ball
-  SCREEN: 'LIGHT',
-  CUT: 'MODERATE',
-  DOUBLECREATE: 'MODERATE',
+  PASS: { actor: 'LIGHT', target: 'LIGHT' },
+  HPASS: { actor: 'LIGHT', target: 'LIGHT' },
+  CREATIVE_PASS: { actor: 'MODERATE', target: 'LIGHT' },
+  ASTOPP: { actor: 'LIGHT', target: 'LIGHT' },
+  HELDKICK: { actor: 'LIGHT', target: 'LIGHT' },
+  // Off-ball — fighting through a screen costs the defender more
+  SCREEN: { actor: 'LIGHT', target: 'MODERATE' },
+  CUT: { actor: 'MODERATE', target: 'MODERATE' },
+  DOUBLECREATE: { actor: 'MODERATE', target: 'MODERATE' },
   // Defense
-  ONDEF: 'LIGHT',
-  PRESS: 'MODERATE',
-  STLTRY: 'LIGHT',
-  CONTEST: 'LIGHT',
-  HELPD: 'HEAVY',
-  DOUBLET: 'HEAVY',
-  TRANSITIOND: 'MODERATE',
+  ONDEF: { actor: 'LIGHT', target: 'LIGHT' },
+  PRESS: { actor: 'MODERATE', target: 'MODERATE' },
+  STLTRY: { actor: 'LIGHT', target: 'LIGHT' },
+  CONTEST: { actor: 'LIGHT', target: 'LIGHT' },
+  HELPD: { actor: 'HEAVY', target: 'MODERATE' },
+  DOUBLET: { actor: 'HEAVY', target: 'HEAVY' },
+  TRANSITIOND: { actor: 'MODERATE', target: 'MODERATE' },
   // Rule / attribution only (non-selectable)
-  FT: 'LIGHT',
-  PASSTOV: 'LIGHT',
-  BALLDESTROY: 'LIGHT',
-  PUTBACK: 'LIGHT',
-  BLK: 'LIGHT',
-  FOUL: 'LIGHT',
-  ORB: 'LIGHT',
-  DRB: 'LIGHT',
-  BOXOUT: 'LIGHT',
-  BLKLOOSE: 'LIGHT',
-} as const satisfies Record<ModelBBehaviorId, string>);
+  FT: { actor: 'LIGHT', target: 'LIGHT' },
+  PASSTOV: { actor: 'LIGHT', target: 'LIGHT' },
+  BALLDESTROY: { actor: 'LIGHT', target: 'LIGHT' },
+  PUTBACK: { actor: 'LIGHT', target: 'LIGHT' },
+  BLK: { actor: 'LIGHT', target: 'LIGHT' },
+  FOUL: { actor: 'LIGHT', target: 'LIGHT' },
+  ORB: { actor: 'LIGHT', target: 'LIGHT' },
+  DRB: { actor: 'LIGHT', target: 'LIGHT' },
+  BOXOUT: { actor: 'LIGHT', target: 'MODERATE' },
+  BLKLOOSE: { actor: 'LIGHT', target: 'LIGHT' },
+} as const satisfies Record<ModelBBehaviorId, { readonly actor: string; readonly target: string }>);
+
+/** v2.10 Forced mismatch reason codes. */
+export const MODEL_B_FORCED_MISMATCH_REASON_CODES = deepFreeze({
+  NO_PRIMARY_CANDIDATE: 'FORCED_MISMATCH_NO_PRIMARY',
+} as const);
 
 export const MODEL_B_EVENT_TYPES = deepFreeze([
   'CLOCK_ADVANCED',
@@ -1173,14 +1178,31 @@ export function assertModelBRegistryIntegrity(): void {
   if (MODEL_B_LEGACY_RULES_CONTENT_HASH === MODEL_B_RULES_CONTENT_HASH) {
     throw new Error('R1 Model B rules/content identity must differ from the legacy v2.9 identity.');
   }
-  // v2.10 energy intensity integrity
+  // v2.10 energy intensity integrity — per-role actor/target entries
   for (const behaviorId of MODEL_B_BEHAVIOR_MATRIX_IDS) {
-    const intensity = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
-    if (intensity === undefined) {
+    const entry = MODEL_B_BEHAVIOR_ENERGY_INTENSITY[behaviorId];
+    if (entry === undefined) {
       throw new Error(`Behavior ${behaviorId} missing from MODEL_B_BEHAVIOR_ENERGY_INTENSITY.`);
     }
-    if (!['LIGHT', 'MODERATE', 'HEAVY'].includes(intensity)) {
-      throw new Error(`Behavior ${behaviorId} energy intensity must be LIGHT/MODERATE/HEAVY.`);
+    if (
+      typeof entry !== 'object' ||
+      entry === null ||
+      !('actor' in entry) ||
+      !('target' in entry)
+    ) {
+      throw new Error(
+        `Behavior ${behaviorId} energy intensity must be {actor, target} per-role object.`,
+      );
+    }
+    if (!['LIGHT', 'MODERATE', 'HEAVY'].includes(entry.actor)) {
+      throw new Error(
+        `Behavior ${behaviorId} actor energy intensity must be LIGHT/MODERATE/HEAVY, got ${entry.actor}.`,
+      );
+    }
+    if (!['LIGHT', 'MODERATE', 'HEAVY'].includes(entry.target)) {
+      throw new Error(
+        `Behavior ${behaviorId} target energy intensity must be LIGHT/MODERATE/HEAVY, got ${entry.target}.`,
+      );
     }
   }
   // v2.10 energy tier band keys

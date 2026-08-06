@@ -19,7 +19,7 @@ import {
   modelBAbilityValues,
   type MatchPlayerSnapshot,
 } from './effective-values.js';
-import { MODEL_B_PARAMETER_REGISTRY } from './registries.js';
+import { MODEL_B_FORCED_MISMATCH_REASON_CODES, MODEL_B_PARAMETER_REGISTRY } from './registries.js';
 import type { ModelBMatchInput, ModelBSession } from './session.js';
 
 export const MODEL_B_INTERNAL_TEST_ROTATION_POLICY_ID = 'model-b-neutral-rotation/internal/test/v1';
@@ -414,6 +414,86 @@ type PlannedSubstitution = Readonly<{
   reasonCode: string;
 }>;
 
+/**
+ * Selects the best bench replacement for a lineup position, enforcing a hard primary-first
+ * constraint. Non-primary candidates are only considered when no primary-position bench
+ * player is eligible (foul-free and not already in the lineup).
+ */
+function selectBestPrimaryOrFallback(
+  session: ModelBSession,
+  side: MatchSide,
+  position: MatchPosition,
+  lineup: StartingLineup,
+  minimumEnergyAdvantageMilli: number,
+  outgoingFatigueMilli: number,
+): { player: MatchPlayerSnapshot; reasonCode: string } | null {
+  const candidates = sortedReplacementCandidates(session, side, position, lineup);
+  if (candidates.length === 0) return null;
+
+  // Step 1: Try primary-position players first
+  const primaryCandidates = candidates.filter((p) => p.primaryPosition === position);
+  const bestPrimary = primaryCandidates.find(
+    (player) =>
+      outgoingFatigueMilli - (currentAnchor(session).fatigueMilliByPlayer[player.playerId] ?? 0) >=
+      minimumEnergyAdvantageMilli,
+  );
+  if (bestPrimary !== undefined) {
+    return { player: bestPrimary, reasonCode: 'INTERNAL_TEST_FATIGUE_POSITION' };
+  }
+
+  // Step 2: Only fall to non-primary if NO primary candidate exists at all
+  if (primaryCandidates.length === 0) {
+    const bestFallback = candidates.find(
+      (player) =>
+        outgoingFatigueMilli -
+          (currentAnchor(session).fatigueMilliByPlayer[player.playerId] ?? 0) >=
+        minimumEnergyAdvantageMilli,
+    );
+    if (bestFallback !== undefined) {
+      return {
+        player: bestFallback,
+        reasonCode: MODEL_B_FORCED_MISMATCH_REASON_CODES.NO_PRIMARY_CANDIDATE,
+      };
+    }
+  }
+
+  return null; // No suitable replacement
+}
+
+/**
+ * Checks whether a currently-mismatched slot can be restored to a primary-position bench
+ * player. Returns the bench playerId if restoration is possible, null otherwise.
+ */
+function canRestorePrimaryPosition(
+  session: ModelBSession,
+  side: MatchSide,
+  position: MatchPosition,
+  currentLineup: StartingLineup,
+  minimumEnergyAdvantageMilli: number,
+): string | null {
+  const currentPlayerId = currentLineup[position];
+  const currentPlayer = playerById(session.input, side).get(currentPlayerId);
+  if (currentPlayer === undefined || currentPlayer.primaryPosition === position) return null;
+
+  const anchor = currentAnchor(session);
+  const fouls = foulCountById(anchor.boxScore, side);
+  const activeIds = new Set(Object.values(currentLineup));
+  const benchPrimary = teamForSide(session.input, side).players.find(
+    (p) =>
+      !activeIds.has(p.playerId) &&
+      p.primaryPosition === position &&
+      (fouls.get(p.playerId) ?? session.input.rules.foulOutLimit) <
+        session.input.rules.foulOutLimit,
+  );
+  if (benchPrimary === undefined) return null;
+
+  const currentEnergy = anchor.fatigueMilliByPlayer[currentPlayerId] ?? 0;
+  const benchEnergy = anchor.fatigueMilliByPlayer[benchPrimary.playerId] ?? 0;
+  if (currentEnergy - benchEnergy < minimumEnergyAdvantageMilli) return null;
+
+  return benchPrimary.playerId;
+}
+
 function sortedReplacementCandidates(
   session: ModelBSession,
   side: MatchSide,
@@ -531,7 +611,9 @@ export function buildModelBFoulOutBoundaryPlan(session: ModelBSession): ModelBFo
 export type ModelBNeutralRotationPlan = Readonly<{
   policyId: typeof MODEL_B_INTERNAL_TEST_ROTATION_POLICY_ID;
   policyInputHash: string;
-  reasonCode: 'INTERNAL_TEST_FATIGUE_POSITION';
+  reasonCode:
+    | 'INTERNAL_TEST_FATIGUE_POSITION'
+    | typeof MODEL_B_FORCED_MISMATCH_REASON_CODES.NO_PRIMARY_CANDIDATE;
   substitutions: readonly PlannedSubstitution[];
   eventPayloads: readonly MatchEvent['payload'][];
 }>;
@@ -574,31 +656,51 @@ export function buildModelBNeutralRotationPlan(session: ModelBSession): ModelBNe
           rosterOrdinal(session.input, side, left.playerId) -
             rosterOrdinal(session.input, side, right.playerId),
       );
+    // v2.10: Return-to-normal — before processing outgoing fatigue subs,
+    // check each slot for a mismatched player that can be restored to a
+    // primary-position bench player with an energy advantage.
+    for (const position of POSITION_ORDER) {
+      const restoreId = canRestorePrimaryPosition(
+        session,
+        side,
+        position,
+        workingLineups[key],
+        MODEL_B_PARAMETER_REGISTRY.neutralRotationMinimumEnergyAdvantageMilli,
+      );
+      if (restoreId === null) continue;
+      const currentId = workingLineups[key][position];
+      substitutions.push({
+        side,
+        position,
+        outPlayerId: currentId,
+        inPlayerId: restoreId,
+        forced: false,
+        reasonCode: 'INTERNAL_TEST_FATIGUE_POSITION',
+      });
+      workingLineups[key] = replaceLineupPlayer(workingLineups[key], currentId, restoreId);
+    }
     for (const candidate of outgoing) {
-      const replacement = sortedReplacementCandidates(
+      const result = selectBestPrimaryOrFallback(
         session,
         side,
         candidate.position,
         workingLineups[key],
-      ).find(
-        (player) =>
-          anchor.fatigueMilliByPlayer[candidate.playerId]! -
-            anchor.fatigueMilliByPlayer[player.playerId]! >=
-          MODEL_B_PARAMETER_REGISTRY.neutralRotationMinimumEnergyAdvantageMilli,
+        MODEL_B_PARAMETER_REGISTRY.neutralRotationMinimumEnergyAdvantageMilli,
+        anchor.fatigueMilliByPlayer[candidate.playerId]!,
       );
-      if (replacement === undefined) continue;
+      if (result === null) continue;
       substitutions.push({
         side,
         position: candidate.position,
         outPlayerId: candidate.playerId,
-        inPlayerId: replacement.playerId,
+        inPlayerId: result.player.playerId,
         forced: false,
-        reasonCode: 'INTERNAL_TEST_FATIGUE_POSITION',
+        reasonCode: result.reasonCode,
       });
       workingLineups[key] = replaceLineupPlayer(
         workingLineups[key],
         candidate.playerId,
-        replacement.playerId,
+        result.player.playerId,
       );
     }
   }

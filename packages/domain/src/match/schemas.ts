@@ -236,6 +236,11 @@ export type LegacyMatchPlayerSnapshot = z.infer<typeof LegacyMatchPlayerSnapshot
 export type PhysicalMatchPlayerSnapshotV1 = z.infer<typeof PhysicalMatchPlayerSnapshotV1Schema>;
 export type MatchPlayerSnapshotValue = z.infer<typeof MatchPlayerSnapshotSchema>;
 
+export type MatchPosition = z.infer<typeof PositionSchema>;
+
+/** All five lineup slots in canonical order. */
+export const POSITION_SLOTS: readonly MatchPosition[] = ['PG', 'SG', 'SF', 'PF', 'C'];
+
 export const StartingLineupSchema = z
   .object({
     PG: NonEmptyStringSchema,
@@ -301,6 +306,18 @@ function makeMatchTeamInputSchema(expectedRosterSize: number) {
             context,
             ['startingLineup', slot],
             'Starter must be included in the registered roster.',
+          );
+        }
+      }
+      // v2.10: Reject active mismatch starters — each starter must play their primary position
+      for (const slot of POSITION_SLOTS) {
+        const starterId = value.startingLineup[slot];
+        const starter = value.players.find((p) => p.playerId === starterId);
+        if (starter !== undefined && starter.primaryPosition !== slot) {
+          addIssue(
+            context,
+            ['startingLineup', slot],
+            `Starter ${starterId} has primary position ${starter.primaryPosition} but is assigned to the ${slot} slot. Active mismatch starters are rejected.`,
           );
         }
       }

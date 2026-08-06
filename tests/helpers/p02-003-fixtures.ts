@@ -166,11 +166,11 @@ export function makeP02MatchInput(
           away.players = sourcePlayers.slice(6);
           away.registeredRosterIds = away.players.map(({ playerId }) => playerId);
           away.startingLineup = {
-            PG: away.players[0]!.playerId,
-            SG: away.players[1]!.playerId,
-            SF: away.players[2]!.playerId,
-            PF: away.players[3]!.playerId,
-            C: away.players[4]!.playerId,
+            PG: away.players.find((p) => p.primaryPosition === 'PG')!.playerId,
+            SG: away.players.find((p) => p.primaryPosition === 'SG')!.playerId,
+            SF: away.players.find((p) => p.primaryPosition === 'SF')!.playerId,
+            PF: away.players.find((p) => p.primaryPosition === 'PF')!.playerId,
+            C: away.players.find((p) => p.primaryPosition === 'C')!.playerId,
           };
           away.roles = {
             primaryOrganizer: away.players[0]!.playerId,
