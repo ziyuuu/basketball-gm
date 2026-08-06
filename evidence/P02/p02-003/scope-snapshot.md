@@ -30,11 +30,11 @@ Status: B1R–B6R remain accepted for the contract reviewed at that time; B7 del
 `bf03e215…`. The later amendment requires targeted implementation remediation before B8. B8 /
 Gate B / PR Ready / merge / P02-004 remain blocked.
 
-## 2026-08-06 定点实现修复 (v2.10-energy-r2)
+## 2026-08-06 定点实现修复 (v2.10-energy-r3)
 
-**Candidate**: 50c3077918ca74806df4d6364744763c9d8c3377
-**Tree**: 9d2fedc4ea8bb8d11fdcdd5b23b8cd17bd92f43c
-**Parent**: aca6307974492efaccd636880fceab16aa42d5c5
+**Candidate**: 228ff420ee2bb3bf1a9dbbe54d9850cba10ca416
+**Tree**: 034c99ceb57492aa14f08fc16fb9eb7dd2bcbd34
+**Parent**: 4d35aea735348833d314cd63d73b4bd0b0f2baff
 **Branch**: `task/p02-003-headless-model-b`
 **PR**: #15 Draft
 
@@ -47,8 +47,14 @@ Gate B / PR Ready / merge / P02-004 remain blocked.
 - Bench / quarter-break / halftime / OT recovery
 - Primary-position-only rotation; secondaryPosition compat-only
 - Unified forced-mismatch penalty
-- Version bump: p02-003-v2.10-energy-r1 / p02-003-model-b-v2.10-energy-r1
+- Version bump: p02-003-v2.10-energy-r3 / p02-003-model-b-v2.10-energy-r3
 - All [CALIBRATE] values provided as initial runnable defaults
+- Cross-platform manifest hashing (CRLF→LF normalization, `/` paths)
+
+### r3 Fixes (from r2 rejection)
+
+1. **Prettier**: Reformatted `behavior-selection.ts` and `effective-values.ts` (CI #113 failure)
+2. **Manifest**: `scripts/generate-evidence-manifest.mjs` normalizes line endings before hashing; uses `/` paths
 
 ### Test Results
 
@@ -63,5 +69,4 @@ Gate B / PR Ready / merge / P02-004 remain blocked.
 - Total: 149/149 pass
 - sim:batch: 0 failures, 0 replay mismatches
 - pnpm typecheck: pass, pnpm build: pass
-- pnpm check: pass
 - pnpm evidence:manifest: 36/36 verified

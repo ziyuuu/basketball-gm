@@ -77,10 +77,12 @@ energy or forced-mismatch runtime behavior has already been implemented.
 ## 2026-08-06 定点实现修复 Implementation Record
 
 **Status**: IMPLEMENTED / SELF-VERIFIED
-**Candidate**: 50c3077918ca74806df4d6364744763c9d8c3377
-**Tree**: 9d2fedc4ea8bb8d11fdcdd5b23b8cd17bd92f43c
+**Candidate**: 228ff420ee2bb3bf1a9dbbe54d9850cba10ca416
+**Tree**: 034c99ceb57492aa14f08fc16fb9eb7dd2bcbd34
+**Parent**: 4d35aea735348833d314cd63d73b4bd0b0f2baff
 **Original implementation**: acf9bbb58d6177a561d3a790bcbe530bcf06975f
 **Branch**: `task/p02-003-headless-model-b`
+**Version**: v2.10-energy-r3
 
 ### What was implemented
 

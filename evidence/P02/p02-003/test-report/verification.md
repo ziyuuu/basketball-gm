@@ -170,3 +170,52 @@ pnpm check   # Prettier, ESLint, TypeScript, boundary check, all tests, Web buil
 pnpm sim:batch  # 0 failures, 0 replay mismatches
 pnpm evidence:manifest  # 36/36 verified
 ```
+
+## 2026-08-06 定点实现修复 v2.10-energy-r3 Verification
+
+### r2 Rejection
+
+The r2 Candidate `4d35aea` was returned with 2 hard blockers:
+
+1. **CI #113 Prettier failure**: `behavior-selection.ts` and `effective-values.ts` failed format check.
+2. **Manifest cross-platform invalidity**: Hashes generated from Windows CRLF bytes, not canonical Git LF bytes.
+
+### r3 Fixes
+
+1. **Prettier**: Reformatted `behavior-selection.ts` and `effective-values.ts`.
+2. **Cross-platform manifest**: `scripts/generate-evidence-manifest.mjs` normalizes `\r\n` → `\n` before SHA-256, uses `/` path separators. Manifest hashes now match Git blob hashes on all platforms.
+
+### Test Results (local, pre-CI)
+
+```bash
+npx vitest run tests/p02-003-b1-registries.test.ts                # 17/17 pass
+npx vitest run tests/p02-003-b2-session.test.ts                   # 12/12 pass
+npx vitest run tests/p02-003-b3-clock-rules.test.ts               # (unchanged) pass
+npx vitest run tests/p02-003-b4-behavior-selection.test.ts         # (unchanged) pass
+npx vitest run tests/p02-003-b5-basketball-results.test.ts         # (unchanged) pass
+npx vitest run tests/p02-003-b6-state-rules.test.ts               # 7/7 pass
+npx vitest run tests/p02-003-b7-runner.test.ts                    # 13/13 pass
+npx vitest run tests/p02-003-energy-forced-mismatch.test.ts        # 63/63 pass
+```
+
+| Suite                 | Pass/Fail   |
+| --------------------- | ----------- |
+| B1 registries         | 17/17       |
+| B2 session            | 12/12       |
+| B3 clock rules        | (unchanged) |
+| B4 behavior selection | (unchanged) |
+| B5 basketball results | (unchanged) |
+| B6 state rules        | 7/7         |
+| B7 runner             | 13/13       |
+| Energy/mismatch (NEW) | 63/63       |
+| **Total**             | **149/149** |
+
+### Verification Commands
+
+```bash
+npx prettier --check packages/domain/src/match/model-b/behavior-selection.ts  # pass
+npx prettier --check packages/domain/src/match/model-b/effective-values.ts     # pass
+node scripts/generate-evidence-manifest.mjs --phase P02                        # 36 entries, LF-normalized
+node apps/sim-cli/dist/cli.js batch                                            # 0 failures, 0 replay mismatches
+git diff --check                                                               # pass
+```

@@ -101,10 +101,44 @@ The v2.10-energy-r1 Candidate `acf9bbb` (evidence commit `aca6307`) was returned
 4. 64-seed scenario re-runs
 5. Gate B performance measurements
 
+### v2.10-energy-r2 Rejection Summary
+
+The v2.10-energy-r2 Candidate `4d35aea` was returned to development with 2 hard blockers:
+
+1. **CI #113 Prettier failure**: `behavior-selection.ts` and `effective-values.ts` failed `pnpm format:check`, blocking lint/typecheck/tests/build from executing in CI.
+2. **Manifest cross-platform invalidity**: `manifest.sha256` was generated from Windows CRLF working-tree bytes, not canonical Git blob (LF) bytes. Verification succeeded on Windows (36/36) but would produce 0/36 on Linux/CI.
+
+### 2026-08-06 定点实现修复 v2.10-energy-r3
+
+#### Identity
+
+- **Candidate**: 228ff420ee2bb3bf1a9dbbe54d9850cba10ca416
+- **Tree**: 034c99ceb57492aa14f08fc16fb9eb7dd2bcbd34
+- **Parent**: 4d35aea735348833d314cd63d73b4bd0b0f2baff
+- **Branch**: `task/p02-003-headless-model-b`
+- **Draft PR**: [#15](https://github.com/ziyuuu/basketball-gm/pull/15)
+
+#### r3 Fixes
+
+1. **Prettier formatting** (`behavior-selection.ts`, `effective-values.ts`): Reformatted to match project Prettier config, resolving CI #113 failure.
+2. **Cross-platform manifest**: `scripts/generate-evidence-manifest.mjs` now normalizes `\r\n` → `\n` before SHA-256 hashing, and uses `/` path separators. Manifest hashes now match canonical Git blob hashes on all platforms.
+
+#### Modified Files in r3
+
+| File                                           | Change                                                    |
+| ---------------------------------------------- | --------------------------------------------------------- |
+| packages/domain/src/match/model-b/behavior-selection.ts | Prettier formatting                               |
+| packages/domain/src/match/model-b/effective-values.ts    | Prettier formatting                               |
+| scripts/generate-evidence-manifest.mjs                  | CRLF→LF normalization, `/` paths                  |
+| evidence/P02/manifest.sha256                             | Regenerated (36 entries, LF-normalized)           |
+
 ### Status
 
 ```text
-P02-003 ENERGY/FORCED-MISMATCH AMENDMENT: IMPLEMENTED / SELF-VERIFIED
-INDEPENDENT REVIEW: REQUESTED
-B8 / GATE B / PR READY / MERGE / P02-004: NOT STARTED / BLOCKED
+P02-003 v2.10-energy-r3:
+IMPLEMENTED / SELF-VERIFIED
+AWAITING CI CONFIRMATION
+
+INDEPENDENT REVIEW: NOT STARTED
+B8 / GATE B / PR READY / MERGE / P02-004: BLOCKED
 ```
