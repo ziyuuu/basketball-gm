@@ -522,21 +522,19 @@ export function selectModelBDoubleTeamActors(
 ): readonly [MatchPlayerSnapshot, MatchPlayerSnapshot] | null {
   if (candidates.length < 2) return null;
   const energy = energyMilliByPlayerId ?? {};
-  const ordered = [...candidates].sort(
-    (left, right) => {
-      const leftInterior = applyEnergyTierPenaltyToAbility(
-        modelBAbilityValues(left).interiorDefense * 1_000,
-        energy[left.playerId] ?? 0,
-        'interiorDefense',
-      );
-      const rightInterior = applyEnergyTierPenaltyToAbility(
-        modelBAbilityValues(right).interiorDefense * 1_000,
-        energy[right.playerId] ?? 0,
-        'interiorDefense',
-      );
-      return rightInterior - leftInterior || compareUtf16CodeUnits(left.playerId, right.playerId);
-    },
-  );
+  const ordered = [...candidates].sort((left, right) => {
+    const leftInterior = applyEnergyTierPenaltyToAbility(
+      modelBAbilityValues(left).interiorDefense * 1_000,
+      energy[left.playerId] ?? 0,
+      'interiorDefense',
+    );
+    const rightInterior = applyEnergyTierPenaltyToAbility(
+      modelBAbilityValues(right).interiorDefense * 1_000,
+      energy[right.playerId] ?? 0,
+      'interiorDefense',
+    );
+    return rightInterior - leftInterior || compareUtf16CodeUnits(left.playerId, right.playerId);
+  });
   return Object.freeze([ordered[0]!, ordered[1]!] as const);
 }
 

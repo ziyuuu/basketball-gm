@@ -109,9 +109,7 @@ export function calculateEnergyTierPenaltyMilli(energyMilli: number): number {
   const remainingPct = Math.floor(((100_000 - energyMilli) * 100) / 100_000);
   const bands = MODEL_B_PARAMETER_REGISTRY.energyTierPenaltyMilli;
   // Descending threshold check (80 → 70 → … → 0)
-  const thresholds = (Object.keys(bands) as unknown as number[])
-    .map(Number)
-    .sort((a, b) => b - a);
+  const thresholds = (Object.keys(bands) as unknown as number[]).map(Number).sort((a, b) => b - a);
   for (const threshold of thresholds) {
     if (remainingPct >= threshold) {
       return bands[threshold as unknown as keyof typeof bands]!;
@@ -167,7 +165,10 @@ export function calculateBehaviorEnergyCostMilli(
   if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1) {
     throw new Error('Behavior energy duration must be a positive safe integer.');
   }
-  const intensityCosts = MODEL_B_PARAMETER_REGISTRY.energyIntensityCostMilli as Record<string, number>;
+  const intensityCosts = MODEL_B_PARAMETER_REGISTRY.energyIntensityCostMilli as Record<
+    string,
+    number
+  >;
   const perSecond = intensityCosts[intensity];
   if (perSecond === undefined) {
     throw new Error(`Unknown energy intensity: ${intensity}.`);

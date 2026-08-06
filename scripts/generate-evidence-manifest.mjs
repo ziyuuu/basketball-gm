@@ -30,10 +30,11 @@ for (const phase of phases) {
   const files = (await collectFiles(directory)).sort();
   const lines = [];
   for (const file of files) {
+    const content = (await readFile(file, 'utf8')).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const hash = createHash('sha256')
-      .update(await readFile(file))
+      .update(content)
       .digest('hex');
-    lines.push(`${hash}  ${relative(directory, file)}`);
+    lines.push(`${hash}  ${relative(directory, file).replace(/\\/g, '/')}`);
   }
   await writeFile(join(directory, 'manifest.sha256'), `${lines.join('\n')}\n`, 'utf8');
   console.log(`Wrote evidence/${phase}/manifest.sha256 with ${lines.length} entries.`);
